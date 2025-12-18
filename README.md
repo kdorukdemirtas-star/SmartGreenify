@@ -233,10 +233,5 @@ static/
 kdorukdemirtas@hotmail.com
 ---
 
-##  Teşekkürler
 
-- **Raspberry Pi Foundation** - Donanım platformu
-- **Scikit-learn** - ML kütüphanesi
-- **Flask & Chart.js** - Web arayüzü
-- **Ntfy.sh** - Bildirim servisi
 
