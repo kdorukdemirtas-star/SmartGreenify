@@ -199,14 +199,7 @@ sudo i2cdetect -y 1  # 0x48 (ADS1115) görünmeli
 python3 -c "import lgpio; h=lgpio.gpiochip_open(0); lgpio.gpio_claim_output(h,27); lgpio.gpio_write(h,27,0)"
 ```
 
-### Log Hataları
-```bash
-# Son 20 satır
-tail -20 logs/errors.log
 
-# Real-time izleme
-tail -f logs/system.log
-```
 
 ---
 
@@ -233,13 +226,7 @@ static/
 
 ---
 
-##  Kaynakça
 
-Bu proje, **Bursa Uludağ Üniversitesi** Teknolojik Tasarım dersi kapsamında geliştirilmiştir.
-
-**Proje Raporu:** [proje(4).docx](1766074269715_kenan%20doruk_proje(4).docx)
-
----
 
 ##  İletişim & Destek
 
@@ -253,6 +240,3 @@ kdorukdemirtas@hotmail.com
 - **Flask & Chart.js** - Web arayüzü
 - **Ntfy.sh** - Bildirim servisi
 
----
-
-**⚡ SmartGreenify - Akıllı Tarım için Akıllı Çözüm**
