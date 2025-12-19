@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SmartGreenify v4.0 - GERÇEK SENSÖRLER + Analytics + PWA + Ntfy + Comprehensive Logging
+# SmartGreenify - GERÇEK SENSÖRLER + Analytics + PWA + Ntfy + Comprehensive Logging
 # BME280 (SPI) + ADS1115 (I2C) + LDR (Digital) + Röle
 
 import threading, time, csv, math, json, os, atexit, signal, sys, random
@@ -1169,7 +1169,7 @@ INDEX_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#27AE60">
-<title>SmartGreenify v4.0</title>
+<title>SmartGreenify</title>
 <link rel="manifest" href="/manifest.json">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -1181,7 +1181,7 @@ INDEX_HTML = """<!DOCTYPE html>
 <body>
 <div class="container">
 <div class="header">
-<div><h1>🌱 SmartGreenify v4.0</h1><div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="live-dot"></span><span style="font-size:13px;color:var(--text2)">Gerçek Sensörler + ML Logları</span></div></div>
+<div><h1>🌱 SmartGreenify</h1><div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="live-dot"></span><span style="font-size:13px;color:var(--text2)">Gerçek Sensörler + ML Logları</span></div></div>
 <button class="theme-toggle" onclick="toggleTheme()"><span id="theme-icon">🌙</span></button>
 </div>
 <div class="card">
@@ -1786,7 +1786,7 @@ def export_excel():
 
 if __name__ == "__main__":
     print("\n" + "="*70)
-    print("🌱 SMARTGREENIFY v4.0 - GERÇEK SENSÖRLER + ML LOGGING")
+    print("🌱 SMARTGREENIFY - GERÇEK SENSÖRLER + ML LOGGING")
     print("="*70)
     print(f"✅ Sensörler: BME280 (SPI) + ADS1115 (I2C) + LDR + Röle")
     print(f"✅ Grafikler: Real-time Chart.js")
