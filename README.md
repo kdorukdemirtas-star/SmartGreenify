@@ -1,4 +1,4 @@
-# 🌱 SmartGreenify v4.0
+# 🌱 SmartGreenify 
 
 **IoT Sensör Ağı ve ML Tabanlı Akıllı Sera Sistemi**
 
