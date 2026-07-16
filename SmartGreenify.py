@@ -35,12 +35,21 @@ except ImportError:
 # ML kütüphaneleri
 try:
     import numpy as np
-    from sklearn.linear_model import LinearRegression
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.base import clone
+    from sklearn.ensemble import (ExtraTreesRegressor, GradientBoostingRegressor,
+                                  HistGradientBoostingRegressor, RandomForestRegressor)
+    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+    from sklearn.tree import DecisionTreeRegressor
+    try:
+        from xgboost import XGBRegressor
+        XGBOOST_AVAILABLE = True
+    except ImportError:
+        XGBOOST_AVAILABLE = False
     ML_AVAILABLE = True
-    print("✅ ML kütüphaneleri yüklü")
+    print(f"✅ AutoML kütüphaneleri yüklü (XGBoost: {'aktif' if XGBOOST_AVAILABLE else 'opsiyonel'})")
 except ImportError:
     ML_AVAILABLE = False
+    XGBOOST_AVAILABLE = False
     print("⚠️ ML kapalı - pip install numpy scikit-learn")
 
 # Plotly
@@ -697,9 +706,18 @@ class Statistics:
         return max(0, min(100, int(score)))
 
 class MLOptimizer:
+    """Selects the most accurate irrigation model from several safe local models.
+
+    This class only consumes the existing CSV sensor log.  It deliberately has
+    no GPIO, relay, or sensor responsibilities, so model experiments cannot
+    alter the hardware configuration.
+    """
+    FEATURE_NAMES = ('soil', 'temperature', 'humidity', 'daylight', 'hour', 'pump_active')
+
     def __init__(self):
         self.model = None
-        self.scaler = None
+        self.model_name = None
+        self.scaler = None  # Kept for compatibility with older ml_model.pkl files.
         self.last_train_time = 0
         self.training_history = []
         self.lock = threading.RLock()
@@ -721,6 +739,7 @@ class MLOptimizer:
                 with open(model_file, 'rb') as f:
                     data = pickle.load(f)
                     self.model = data.get('model')
+                    self.model_name = data.get('model_name', 'Eski doğrusal model')
                     self.scaler = data.get('scaler')
                     self.last_train_time = data.get('train_time', 0)
                     self.training_history = data.get('history', [])
@@ -738,6 +757,8 @@ class MLOptimizer:
             import pickle
             data = {
                 'model': self.model,
+                'model_name': self.model_name,
+                'feature_names': self.FEATURE_NAMES,
                 'scaler': self.scaler,
                 'train_time': self.last_train_time,
                 'history': self.training_history[-10:]
@@ -749,6 +770,31 @@ class MLOptimizer:
         except Exception as e:
             logger.error(f"ML kaydetme hatası: {e}")
             return False
+
+    def _candidate_models(self):
+        """Return deterministic candidates suitable for a Raspberry Pi."""
+        candidates = {
+            'Decision Tree': DecisionTreeRegressor(max_depth=6, min_samples_leaf=3, random_state=42),
+            'Random Forest': RandomForestRegressor(
+                n_estimators=120, max_depth=10, min_samples_leaf=2, random_state=42, n_jobs=-1
+            ),
+            'Extra Trees': ExtraTreesRegressor(
+                n_estimators=120, max_depth=10, min_samples_leaf=2, random_state=42, n_jobs=-1
+            ),
+            'Gradient Boosting': GradientBoostingRegressor(
+                n_estimators=100, max_depth=2, learning_rate=0.05, loss='huber', random_state=42
+            ),
+            'Histogram Gradient Boosting': HistGradientBoostingRegressor(
+                max_iter=120, max_leaf_nodes=15, learning_rate=0.08, l2_regularization=0.1, random_state=42
+            ),
+        }
+        if XGBOOST_AVAILABLE:
+            candidates['XGBoost'] = XGBRegressor(
+                n_estimators=120, max_depth=3, learning_rate=0.05,
+                subsample=0.85, colsample_bytree=0.85, objective='reg:squarederror',
+                n_jobs=1, random_state=42, verbosity=0
+            )
+        return candidates
     
     def train_model(self, csv_file):
         if not ML_AVAILABLE or not os.path.exists(csv_file):
@@ -774,8 +820,8 @@ class MLOptimizer:
                         except:
                             continue
                 
-                if len(data) < 20:
-                    ml_logger.logger.info(f"Yetersiz veri: {len(data)}/20")
+                if len(data) < 30:
+                    ml_logger.logger.info(f"Yetersiz veri: {len(data)}/30")
                     return False
                 
                 ml_logger.log_training_start(len(data))
@@ -795,17 +841,33 @@ class MLOptimizer:
                 X = np.array(X)
                 y = np.array(y)
                 
-                self.scaler = StandardScaler()
-                X_scaled = self.scaler.fit_transform(X)
-                
-                self.model = LinearRegression()
-                self.model.fit(X_scaled, y)
-                
-                # Performans metrikleri
-                score = self.model.score(X_scaled, y)
-                predictions = self.model.predict(X_scaled)
-                mae = np.mean(np.abs(y - predictions))
-                rmse = np.sqrt(np.mean((y - predictions)**2))
+                # Preserve chronology: evaluate on the most recent readings instead
+                # of mixing future observations into the training set.
+                split_at = max(20, int(len(X) * 0.8))
+                if len(X) - split_at < 5:
+                    split_at = len(X) - 5
+                X_train, X_test = X[:split_at], X[split_at:]
+                y_train, y_test = y[:split_at], y[split_at:]
+
+                results = []
+                for name, candidate in self._candidate_models().items():
+                    try:
+                        candidate.fit(X_train, y_train)
+                        predictions = candidate.predict(X_test)
+                        results.append((mean_absolute_error(y_test, predictions), name, candidate))
+                    except Exception as model_error:
+                        ml_logger.logger.warning(f"{name} atlandı: {model_error}")
+
+                if not results:
+                    raise RuntimeError("Hiçbir AutoML adayı eğitilemedi")
+
+                validation_mae, self.model_name, winner = min(results, key=lambda item: item[0])
+                self.model = clone(winner).fit(X, y)
+                self.scaler = None
+                predictions = self.model.predict(X_test)
+                score = r2_score(y_test, predictions)
+                mae = mean_absolute_error(y_test, predictions)
+                rmse = math.sqrt(mean_squared_error(y_test, predictions))
                 
                 duration = time.time() - start_time
                 self.last_train_time = time.time()
@@ -815,6 +877,9 @@ class MLOptimizer:
                     'score': score,
                     'mae': mae,
                     'rmse': rmse,
+                    'validation_mae': validation_mae,
+                    'model_name': self.model_name,
+                    'candidates_tested': len(results),
                     'data_points': len(X),
                     'duration': duration
                 })
@@ -838,8 +903,10 @@ class MLOptimizer:
                 
                 for hour in range(24):
                     features = np.array([[soil, temp, hum, 1 if light_daytime else 0, hour, 0]])
-                    features_scaled = self.scaler.transform(features)
-                    predicted_change = self.model.predict(features_scaled)[0]
+                    # Older persisted linear models need their original scaler;
+                    # AutoML tree models use raw, interpretable sensor features.
+                    model_input = self.scaler.transform(features) if self.scaler else features
+                    predicted_change = self.model.predict(model_input)[0]
                     
                     score = abs(predicted_change) + (0.5 if 6 <= hour <= 18 else 0)
                     
@@ -865,6 +932,8 @@ class MLOptimizer:
                 'score': round(last['score'], 3),
                 'mae': round(last.get('mae', 0), 3),
                 'rmse': round(last.get('rmse', 0), 3),
+                'model_name': last.get('model_name', self.model_name or 'Bilinmiyor'),
+                'candidates_tested': last.get('candidates_tested', 1),
                 'data_points': last['data_points'],
                 'total_trainings': len(self.training_history)
             }
@@ -1160,7 +1229,21 @@ MANIFEST_JSON = {
     "icons": [{"src": "/static/icon.png", "sizes": "192x192", "type": "image/png"}]
 }
 
-SERVICE_WORKER = "const CACHE='sg-v1';self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/']))));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));"
+SERVICE_WORKER = """const CACHE='smartgreenify-v2';
+const APP_SHELL=['/','/manifest.json'];
+self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting())));
+self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+self.addEventListener('fetch',event=>{
+  if(event.request.method!=='GET') return;
+  const request=event.request;
+  if(request.mode==='navigate'){
+    event.respondWith(fetch(request).then(response=>{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put('/',copy));return response;}).catch(()=>caches.match('/')));
+    return;
+  }
+  if(new URL(request.url).origin===self.location.origin){
+    event.respondWith(caches.match(request).then(cached=>cached||fetch(request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(request,copy));}return response;})));
+  }
+});"""
 
 # HTML Template (SmartGreen -> SmartGreenify)
 INDEX_HTML = """<!DOCTYPE html>
@@ -1175,13 +1258,13 @@ INDEX_HTML = """<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 {% if socketio_available %}<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>{% endif %}
 <style>
-*{margin:0;padding:0;box-sizing:border-box}:root{--bg:#FAF8F3;--card:#FFF;--text:#2C3E50;--text2:#7F8C8D;--green:#27AE60;--blue:#3498DB;--orange:#F39C12;--red:#E74C3C;--border:rgba(149,165,166,0.15)}[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#ECEFF1;--text2:#B0BEC5;--border:rgba(255,255,255,0.1)}body{font-family:Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;transition:all 0.3s}.container{max-width:1400px;margin:0 auto;padding:20px}.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;flex-wrap:wrap;gap:15px}h1{font-size:clamp(24px,5vw,36px);font-weight:700;background:linear-gradient(120deg,var(--green),#52C88A,var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent}.theme-toggle{background:var(--card);border:2px solid var(--border);border-radius:50px;padding:8px 16px;cursor:pointer;font-size:20px}.card{background:var(--card);border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);border:1px solid var(--border)}.card:hover{box-shadow:0 4px 16px rgba(0,0,0,0.12);transform:translateY(-2px);transition:all 0.3s}.card-title{font-size:20px;font-weight:600;display:flex;align-items:center;gap:10px;margin-bottom:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px}.stat-card{background:var(--card);border-radius:12px;padding:20px;text-align:center;border:1px solid var(--border);position:relative;overflow:hidden}.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--green),var(--blue))}.stat-value{font-size:32px;font-weight:700;color:var(--green);margin-bottom:8px}.stat-label{font-size:13px;color:var(--text2);font-weight:500}.btn{background:linear-gradient(135deg,var(--green),#52C88A);color:#FFF;border:none;padding:12px 24px;border-radius:12px;cursor:pointer;font-size:14px;font-weight:500;margin:5px;text-decoration:none;display:inline-block;text-align:center}.btn:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(39,174,96,0.3)}.btn-danger{background:linear-gradient(135deg,var(--red),#C0392B)}.status-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:500}.status-on{background:rgba(39,174,96,0.2);color:var(--green)}.status-off{background:rgba(149,165,166,0.1);color:var(--text2)}.chart-container{position:relative;height:300px;margin-top:20px}.live-dot{width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}input,select{padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text)}.schedule-item{display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:8px;margin-bottom:8px}@media(max-width:768px){.container{padding:15px}.card{padding:16px}.chart-container{height:250px}}
+*{margin:0;padding:0;box-sizing:border-box}:root{--bg:#FAF8F3;--card:#FFF;--text:#2C3E50;--text2:#7F8C8D;--green:#27AE60;--blue:#3498DB;--orange:#F39C12;--red:#E74C3C;--border:rgba(149,165,166,0.15)}[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#ECEFF1;--text2:#B0BEC5;--border:rgba(255,255,255,0.1)}body{font-family:Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;transition:background .25s,color .25s}.container{max-width:1400px;margin:0 auto;padding:20px}.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;flex-wrap:wrap;gap:15px}h1{font-size:clamp(24px,5vw,36px);font-weight:700;background:linear-gradient(120deg,var(--green),#52C88A,var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent}.theme-toggle{background:var(--card);border:2px solid var(--border);border-radius:50px;padding:8px 16px;cursor:pointer;font-size:20px;transition:transform .2s,box-shadow .2s}.theme-toggle:hover{transform:rotate(12deg);box-shadow:0 4px 14px rgba(0,0,0,.12)}.card{background:var(--card);border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);border:1px solid var(--border);transition:transform .25s ease,box-shadow .25s ease,background .25s}.card:hover{box-shadow:0 8px 24px rgba(0,0,0,.10);transform:translateY(-2px)}.card-title{font-size:20px;font-weight:600;display:flex;align-items:center;gap:10px;margin-bottom:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px}.stat-card{background:var(--card);border-radius:12px;padding:20px;text-align:center;border:1px solid var(--border);position:relative;overflow:hidden;transition:transform .2s ease}.stat-card:hover{transform:scale(1.02)}.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--green),var(--blue))}.stat-value{font-size:32px;font-weight:700;color:var(--green);margin-bottom:8px;font-variant-numeric:tabular-nums}.stat-label{font-size:13px;color:var(--text2);font-weight:500}.btn{background:linear-gradient(135deg,var(--green),#52C88A);color:#FFF;border:none;padding:12px 24px;border-radius:12px;cursor:pointer;font-size:14px;font-weight:500;margin:5px;text-decoration:none;display:inline-block;text-align:center;transition:transform .18s ease,box-shadow .18s ease,filter .18s ease}.btn:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(39,174,96,.28);filter:brightness(1.04)}.btn:active{transform:translateY(0) scale(.98)}.btn-danger{background:linear-gradient(135deg,var(--red),#C0392B)}.status-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:500}.status-on{background:rgba(39,174,96,0.2);color:var(--green)}.status-off{background:rgba(149,165,166,0.1);color:var(--text2)}.chart-container{position:relative;height:300px;margin-top:20px}.live-dot{width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 2s infinite}.connection{font-size:12px;color:var(--text2)}.connection.online{color:var(--green)}.connection.offline{color:var(--orange)}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}input,select{padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);transition:border-color .2s,box-shadow .2s}input:focus,select:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(39,174,96,.12)}.schedule-item{display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:8px;margin-bottom:8px;transition:transform .2s}.schedule-item:hover{transform:translateX(3px)}@media(max-width:768px){.container{padding:15px}.card{padding:16px}.chart-container{height:250px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
 <div class="container">
 <div class="header">
-<div><h1>🌱 SmartGreenify</h1><div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="live-dot"></span><span style="font-size:13px;color:var(--text2)">Gerçek Sensörler + ML Logları</span></div></div>
+<div><h1>🌱 SmartGreenify</h1><div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="live-dot"></span><span style="font-size:13px;color:var(--text2)">Gerçek Sensörler + ML Logları</span><span class="connection" id="connection_status">Bağlanıyor…</span></div></div>
 <button class="theme-toggle" onclick="toggleTheme()"><span id="theme-icon">🌙</span></button>
 </div>
 <div class="card">
@@ -1239,8 +1322,8 @@ INDEX_HTML = """<!DOCTYPE html>
 <div class="stat-card"><div class="stat-value" id="health_score">--</div><div class="stat-label">Sağlık</div></div>
 </div>
 </div>
-<div class="card">
-<div class="card-title">🤖 Makine Öğrenmesi</div>
+<div class="card" style="background:linear-gradient(135deg,var(--card),rgba(39,174,96,.08))">
+<div class="card-title">🤖 AutoML Sulama Asistanı <span style="margin-left:auto;font-size:12px;color:var(--green);background:rgba(39,174,96,.12);padding:4px 9px;border-radius:999px">Yerel & güvenli</span></div>
 <div id="ml_status" style="padding:15px;background:var(--bg);border-radius:8px;margin-bottom:10px"></div>
 <div id="ml_prediction" style="font-size:14px;color:var(--text2)"></div>
 </div>
@@ -1257,7 +1340,29 @@ INDEX_HTML = """<!DOCTYPE html>
 </div>
 </div>
 <script>
-const charts={};function toggleTheme(){const h=document.documentElement;const c=h.getAttribute('data-theme');const n=c==='dark'?'light':'dark';h.setAttribute('data-theme',n);localStorage.setItem('theme',n);document.getElementById('theme-icon').textContent=n==='dark'?'☀️':'🌙'}const s=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',s);if(s==='dark')document.getElementById('theme-icon').textContent='☀️';function createChart(id,label,color){const ctx=document.getElementById(id).getContext('2d');charts[id]=new Chart(ctx,{type:'line',data:{labels:[],datasets:[{label:label,data:[],borderColor:color,backgroundColor:color+'20',tension:0.4,fill:true,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false,grid:{color:'rgba(149,165,166,0.1)'}},x:{grid:{display:false},ticks:{maxTicksLimit:6}}}}})}function updateChart(id,labels,data){if(!charts[id])return;charts[id].data.labels=labels.slice(-20);charts[id].data.datasets[0].data=data.slice(-20);charts[id].update('none')}createChart('soilChart','Toprak','#27AE60');createChart('tempChart','Sıcaklık','#F39C12');createChart('humChart','Nem','#3498DB');createChart('pressureChart','Basınç','#9B59B6');{% if socketio_available %}const socket=io();socket.on('connect',()=>console.log('WebSocket'));socket.on('sensor_update',d=>updateUI(d));{% endif %}function startWater(){const dur=document.getElementById('manual_duration').value;fetch('/manual_irrigation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'start',duration:parseInt(dur)})}).then(r=>r.json()).then(d=>alert(d.message))}function stopWater(){fetch('/manual_irrigation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'stop'})}).then(r=>r.json()).then(d=>alert(d.message))}function addSchedule(){const h=document.getElementById('schedule_hour').value;const m=document.getElementById('schedule_minute').value;fetch('/add_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hour:parseInt(h),minute:parseInt(m)})}).then(r=>r.json()).then(d=>{alert(d.message);update()})}function deleteSchedule(idx){if(confirm('Silmek istediğinize emin misiniz?')){fetch('/delete_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:idx})}).then(r=>r.json()).then(d=>{alert(d.message);update()})}}function exportPDF(){const status=document.getElementById('export_status');status.textContent='⏳ PDF oluşturuluyor...';fetch('/analytics/export_pdf').then(r=>r.json()).then(d=>{if(d.success){status.innerHTML=`✅ ${d.message}<br><a href="${d.download_url}" download style="color:white;text-decoration:underline;font-weight:bold">📥 İndir</a>`}else{status.textContent='❌ Hata: '+d.error}}).catch(e=>{status.textContent='❌ Hata: '+e})}function exportExcel(){const status=document.getElementById('export_status');status.textContent='⏳ Excel oluşturuluyor...';fetch('/analytics/export_excel').then(r=>r.json()).then(d=>{if(d.success){status.innerHTML=`✅ ${d.message}<br><a href="${d.download_url}" download style="color:white;text-decoration:underline;font-weight:bold">📥 İndir</a>`}else{status.textContent='❌ Hata: '+d.error}}).catch(e=>{status.textContent='❌ Hata: '+e})}async function update(){try{const r=await fetch('/data');const d=await r.json();updateUI(d)}catch(e){console.error(e)}}function updateUI(d){if(!d)return;document.getElementById('soil_value').textContent=(d.soil||0).toFixed(1);document.getElementById('temp_value').textContent=(d.temp||0).toFixed(1);document.getElementById('hum_value').textContent=(d.hum||0).toFixed(1);document.getElementById('pressure_value').textContent=(d.pressure||0).toFixed(0);document.getElementById('light_value').textContent=d.light_daytime?'☀️ Gündüz':'🌙 Gece';const badge=document.getElementById('pump_badge');if(d.pump_on){badge.className='status-badge status-on';badge.textContent='⚫ Açık'}else{badge.className='status-badge status-off';badge.textContent='⚫ Kapalı'}if(d.stats){document.getElementById('stat_today').textContent=d.stats.daily.count;document.getElementById('stat_total').textContent=d.stats.total_irrigations}if(d.health_score!==undefined){document.getElementById('health_score').textContent=d.health_score}if(d.ml_enabled){let mlHtml='<strong>✅ ML Aktif</strong><br>';if(d.ml_stats){mlHtml+=`<small>Skor: ${d.ml_stats.score} | MAE: ${d.ml_stats.mae} | RMSE: ${d.ml_stats.rmse} | Veri: ${d.ml_stats.data_points} | Eğitim: ${d.ml_stats.total_trainings}</small>`}else{mlHtml+='<small>Model henüz eğitilmedi (20+ veri gerekli)</small>'}document.getElementById('ml_status').innerHTML=mlHtml;if(d.ml_prediction){document.getElementById('ml_prediction').innerHTML=`<strong>💡 Optimal Sulama:</strong> ${d.ml_prediction}:00`}else{document.getElementById('ml_prediction').innerHTML='Tahmin için daha fazla veri bekleniyor...'}if(d.ml_suggested_hour!==null){document.getElementById('ml_prediction').innerHTML+=`<br><strong>🤖 Sistem Önerisi:</strong> ${d.ml_suggested_hour}:00 (Otomatik: ${d.auto_irrigation_enabled?'Açık':'Kapalı'})`}}else{document.getElementById('ml_status').innerHTML='<strong>⚠️ ML Kapalı</strong><br><small>scikit-learn kurun: pip install scikit-learn numpy</small>';document.getElementById('ml_prediction').innerHTML=''}if(d.schedules){let html='';d.schedules.forEach((s,i)=>{html+=`<div class="schedule-item"><div><strong>${s.hour.toString().padStart(2,'0')}:${s.minute.toString().padStart(2,'0')}</strong></div><button class="btn btn-danger" style="padding:6px 12px;font-size:12px" onclick="deleteSchedule(${i})">🗑️</button></div>`});document.getElementById('schedule_list').innerHTML=html||'<p style="color:var(--text2)">Program yok</p>'}if(d.history){updateChart('soilChart',d.history.times,d.history.soil);updateChart('tempChart',d.history.times,d.history.temp);updateChart('humChart',d.history.times,d.history.hum);updateChart('pressureChart',d.history.times,d.history.pressure)}}if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}update();{% if not socketio_available %}setInterval(update,5000);{% endif %}
+/* Legacy dashboard script retained below for template history. */
+</script>
+<script>
+const charts={};
+function toggleTheme(){const root=document.documentElement,next=root.getAttribute('data-theme')==='dark'?'light':'dark';root.setAttribute('data-theme',next);localStorage.setItem('theme',next);document.getElementById('theme-icon').textContent=next==='dark'?'☀️':'🌙'}
+const savedTheme=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',savedTheme);if(savedTheme==='dark')document.getElementById('theme-icon').textContent='☀️';
+function createChart(id,label,color){charts[id]=new Chart(document.getElementById(id),{type:'line',data:{labels:[],datasets:[{label,data:[],borderColor:color,backgroundColor:color+'20',tension:.4,fill:true,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:6}},y:{grid:{color:'rgba(149,165,166,.1)'}}}}})}
+function updateChart(id,labels,data){const chart=charts[id];if(!chart)return;chart.data.labels=labels.slice(-20);chart.data.datasets[0].data=data.slice(-20);chart.update('none')}
+[['soilChart','Toprak','#27AE60'],['tempChart','Sıcaklık','#F39C12'],['humChart','Nem','#3498DB'],['pressureChart','Basınç','#9B59B6']].forEach(item=>createChart(...item));
+function post(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json())}
+function startWater(){post('/manual_irrigation',{action:'start',duration:Number(document.getElementById('manual_duration').value)}).then(d=>alert(d.message))}
+function stopWater(){post('/manual_irrigation',{action:'stop'}).then(d=>alert(d.message))}
+function addSchedule(){post('/add_schedule',{hour:Number(document.getElementById('schedule_hour').value),minute:Number(document.getElementById('schedule_minute').value)}).then(d=>{alert(d.message);update()})}
+function deleteSchedule(index){if(confirm('Silmek istediğinize emin misiniz?'))post('/delete_schedule',{index}).then(d=>{alert(d.message);update()})}
+function exportFile(path,label){const status=document.getElementById('export_status');status.textContent='⏳ '+label+' oluşturuluyor...';fetch(path).then(r=>r.json()).then(d=>{status.innerHTML=d.success?`✅ ${d.message}<br><a href="${d.download_url}" download style="color:white;text-decoration:underline">📥 İndir</a>`:'❌ Hata: '+d.error}).catch(e=>status.textContent='❌ Hata: '+e)}
+function exportPDF(){exportFile('/analytics/export_pdf','PDF')};function exportExcel(){exportFile('/analytics/export_excel','Excel')}
+function updateUI(d){if(!d)return;['soil','temp','hum','pressure'].forEach(k=>document.getElementById(k+'_value').textContent=(d[k]||0).toFixed(k==='pressure'?0:1));document.getElementById('light_value').textContent=d.light_daytime?'☀️ Gündüz':'🌙 Gece';const pump=document.getElementById('pump_badge');pump.className='status-badge '+(d.pump_on?'status-on':'status-off');pump.textContent=d.pump_on?'⚫ Açık':'⚫ Kapalı';document.getElementById('stat_today').textContent=d.stats.daily.count;document.getElementById('stat_total').textContent=d.stats.total_irrigations;document.getElementById('health_score').textContent=d.health_score;const stats=d.ml_stats;document.getElementById('ml_status').innerHTML=d.ml_enabled?(stats?`<strong>✅ AutoML hazır</strong><br><small><strong>${stats.model_name}</strong> seçildi · ${stats.candidates_tested} model karşılaştırıldı<br>Doğrulama skoru: ${stats.score} | MAE: ${stats.mae} | RMSE: ${stats.rmse} | Veri: ${stats.data_points}</small>`:'<strong>✅ AutoML hazır</strong><br><small>İlk seçim için 30+ sensör kaydı gerekiyor.</small>'):'<strong>⚠️ ML Kapalı</strong>';document.getElementById('ml_prediction').innerHTML=d.ml_prediction?`<strong>💡 Optimal Sulama:</strong> ${d.ml_prediction}:00`:'Tahmin için daha fazla veri bekleniyor...';if(d.ml_suggested_hour!==null)document.getElementById('ml_prediction').innerHTML+=`<br><strong>🤖 Sistem Önerisi:</strong> ${d.ml_suggested_hour}:00`;document.getElementById('schedule_list').innerHTML=d.schedules.map((s,i)=>`<div class="schedule-item"><strong>${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}</strong><button class="btn btn-danger" style="padding:6px 12px;font-size:12px" onclick="deleteSchedule(${i})">🗑️</button></div>`).join('')||'<p style="color:var(--text2)">Program yok</p>';Object.entries({soil:'soil',temp:'temp',hum:'hum',pressure:'pressure'}).forEach(([key,id])=>updateChart(id+'Chart',d.history.times,d.history[key]))}
+let latestData={};
+function setConnection(text,state){const el=document.getElementById('connection_status');el.textContent=text;el.className='connection '+state}
+function applySensorUpdate(partial){latestData={...latestData,...partial,history:partial.history||latestData.history};if(latestData.stats&&latestData.schedules)updateUI(latestData)}
+async function update(){try{const response=await fetch('/data',{cache:'no-store'});latestData=await response.json();updateUI(latestData);setConnection('Canlı veri','online')}catch(e){setConnection('Çevrimdışı — tekrar deneniyor','offline');console.error(e)}}
+{% if socketio_available %}const socket=io({transports:['websocket','polling'],reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:1000,reconnectionDelayMax:10000,timeout:8000});socket.on('connect',()=>setConnection('Canlı veri','online'));socket.on('disconnect',()=>setConnection('Yeniden bağlanıyor…','offline'));socket.on('connect_error',()=>setConnection('Bağlantı bekleniyor…','offline'));socket.on('sensor_update',applySensorUpdate);{% endif %}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').then(registration=>registration.update()).catch(console.warn);update();setInterval(update,30000);
 </script>
 </body>
 </html>

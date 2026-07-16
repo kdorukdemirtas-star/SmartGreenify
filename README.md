@@ -11,7 +11,7 @@
 SmartGreenify, **Raspberry Pi 5** üzerinde çalışan yapay zeka destekli otonom sera sistemidir.
 
 ###  Temel Özellikler
--  **Scikit-learn ML** ile optimal sulama tahmini
+-  **AutoML** ile en uygun sulama tahmini (Decision Tree, Random Forest, Extra Trees, Gradient Boosting, HistGradientBoosting ve isteğe bağlı XGBoost)
 -  **%40 su tasarrufu** (geleneksel yönteme göre)
 -  **Real-time dashboard** (WebSocket + Chart.js)
 -  **PWA desteği** - her cihazda çalışır
@@ -59,8 +59,8 @@ pip3 install flask requests
 # WebSocket (opsiyonel ama önerilen)
 pip3 install flask-socketio
 
-# ML özellikleri
-pip3 install numpy scikit-learn
+# AutoML özellikleri
+pip3 install numpy scikit-learn xgboost
 
 # Analytics & Raporlar
 pip3 install plotly pandas reportlab openpyxl
@@ -127,12 +127,14 @@ GET  /analytics/export_pdf    # PDF rapor indir
 GET  /analytics/export_excel  # Excel rapor indir
 ```
 
-### Makine Öğrenmesi
-- **Algoritma:** Doğrusal Regresyon (Scikit-learn)
+### AutoML Makine Öğrenmesi
+- **Algoritmalar:** Decision Tree, Random Forest, Extra Trees, Gradient Boosting, Histogram Gradient Boosting ve (kuruluysa) XGBoost
+- **Seçim:** Son %20 zaman sıralı kayıt üzerinde en düşük MAE'ye sahip model otomatik seçilir; gelecek veriler eğitim setine karışmaz.
 - **Eğitim:** Her 7 günde otomatik
 - **Girdi:** Toprak nemi, sıcaklık, hava nemi, ışık, saat
 - **Çıktı:** Optimal sulama saati (0-23)
 - **Model dosyası:** `ml_model.pkl`
+- **Donanım güvenliği:** AutoML yalnızca `data_log.csv` dosyasını okur. Sensör, GPIO, SPI/I²C ve röle pin yapılandırmasını değiştirmez.
 
 ### Loglama
 ```
@@ -232,6 +234,5 @@ static/
 
 kdorukdemirtas@hotmail.com
 ---
-
 
 
