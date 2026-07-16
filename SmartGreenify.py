@@ -1277,77 +1277,81 @@ INDEX_HTML = """<!DOCTYPE html>
 <body>
 <div class="container">
 <div class="header">
-<div><h1>🌱 SmartGreenify</h1><div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="live-dot"></span><span style="font-size:13px;color:var(--text2)">Gerçek Sensörler + ML Logları</span><span class="connection" id="connection_status">Bağlanıyor…</span></div></div>
+<div><h1>🌱 SmartGreenify</h1><div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="live-dot"></span><span style="font-size:13px;color:var(--text2)">Live sensors + local intelligence</span><span class="connection" id="connection_status">Connecting…</span></div></div>
 <button class="theme-toggle" onclick="toggleTheme()"><span id="theme-icon">🌙</span></button>
 </div>
 <div class="card">
-<div class="card-title">🪴 Bitki</div>
+<div class="card-title">🪴 Plant profile</div>
 <form method="POST" action="/select_plant" style="display:flex;gap:10px">
 <select name="plant" style="flex:1">{% for p in plants %}<option value="{{p}}"{% if p==current %}selected{% endif %}>{{plant_profiles[p].icon}} {{p}}</option>{% endfor %}</select>
-<button class="btn" type="submit">Değiştir</button>
+<button class="btn" type="submit">Update</button>
 </form>
 </div>
 <div class="card">
-<div class="card-title">📊 Sensörler</div>
+<div class="card-title">📊 Live sensors</div>
 <div class="grid">
-<div class="stat-card"><div class="stat-value" id="soil_value">--</div><div class="stat-label">Toprak Nemi (%)</div></div>
-<div class="stat-card"><div class="stat-value" id="temp_value">--</div><div class="stat-label">Sıcaklık (°C)</div></div>
-<div class="stat-card"><div class="stat-value" id="hum_value">--</div><div class="stat-label">Hava Nemi (%)</div></div>
-<div class="stat-card"><div class="stat-value" id="pressure_value">--</div><div class="stat-label">Basınç (hPa)</div></div>
-<div class="stat-card"><div class="stat-value" id="light_value">--</div><div class="stat-label">Işık</div></div>
-<div class="stat-card"><span class="status-badge status-off" id="pump_badge">⚫ Kapalı</span><div class="stat-label" style="margin-top:10px">Pompa</div></div>
+<div class="stat-card"><div class="stat-value" id="soil_value">--</div><div class="stat-label">SOIL MOISTURE (%)</div></div>
+<div class="stat-card"><div class="stat-value" id="temp_value">--</div><div class="stat-label">TEMPERATURE (°C)</div></div>
+<div class="stat-card"><div class="stat-value" id="hum_value">--</div><div class="stat-label">AIR HUMIDITY (%)</div></div>
+<div class="stat-card"><div class="stat-value" id="pressure_value">--</div><div class="stat-label">PRESSURE (hPa)</div></div>
+<div class="stat-card"><div class="stat-value" id="light_value">--</div><div class="stat-label">LIGHT</div></div>
+<div class="stat-card"><span class="status-badge status-off" id="pump_badge">⚫ Off</span><div class="stat-label" style="margin-top:10px">PUMP</div></div>
 </div>
 </div>
 <div class="card">
-<div class="card-title">📈 Toprak Nemi</div>
+<div class="card-title">📈 Soil moisture trend</div>
 <div class="chart-container"><canvas id="soilChart"></canvas></div>
 </div>
 <div class="grid">
-<div class="card"><div class="card-title">🌡️ Sıcaklık</div><div class="chart-container"><canvas id="tempChart"></canvas></div></div>
-<div class="card"><div class="card-title">💨 Nem</div><div class="chart-container"><canvas id="humChart"></canvas></div></div>
+<div class="card"><div class="card-title">🌡️ Temperature</div><div class="chart-container"><canvas id="tempChart"></canvas></div></div>
+<div class="card"><div class="card-title">💨 Humidity</div><div class="chart-container"><canvas id="humChart"></canvas></div></div>
 </div>
 <div class="card">
-<div class="card-title">🌍 Basınç</div>
+<div class="card-title">🌍 Pressure</div>
 <div class="chart-container"><canvas id="pressureChart"></canvas></div>
 </div>
 <div class="card">
-<div class="card-title">💦 Pompa</div>
+<div class="card-title">🌿 Environmental overview</div>
+<div class="chart-container"><canvas id="environmentChart"></canvas></div>
+</div>
+<div class="card">
+<div class="card-title">💦 Pump control</div>
 <div style="display:flex;gap:10px;margin-bottom:15px">
-<select id="manual_duration" style="width:150px"><option value="30">30s</option><option value="60" selected>1dk</option><option value="120">2dk</option><option value="300">5dk</option></select>
-<button class="btn" onclick="startWater()">▶️ Başlat</button>
-<button class="btn btn-danger" onclick="stopWater()">⏹️ Durdur</button>
+<select id="manual_duration" style="width:150px"><option value="30">30 seconds</option><option value="60" selected>1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes</option></select>
+<button class="btn" onclick="startWater()">▶️ Start</button>
+<button class="btn btn-danger" onclick="stopWater()">⏹️ Stop</button>
 </div>
 </div>
 <div class="card">
-<div class="card-title">⏰ Program</div>
+<div class="card-title">⏰ Schedule</div>
 <div style="display:flex;gap:10px;margin-bottom:15px">
-<input type="number" id="schedule_hour" min="0" max="23" value="7" style="width:80px" placeholder="Saat">
-<input type="number" id="schedule_minute" min="0" max="59" value="0" style="width:80px" placeholder="Dk">
-<button class="btn" onclick="addSchedule()">➕ Ekle</button>
+<input type="number" id="schedule_hour" min="0" max="23" value="7" style="width:80px" placeholder="Hour">
+<input type="number" id="schedule_minute" min="0" max="59" value="0" style="width:80px" placeholder="Min">
+<button class="btn" onclick="addSchedule()">➕ Add</button>
 </div>
 <div id="schedule_list"></div>
 </div>
 <div class="card">
-<div class="card-title">📊 İstatistikler</div>
+<div class="card-title">📊 Garden health</div>
 <div class="grid">
-<div class="stat-card"><div class="stat-value" id="stat_today">0</div><div class="stat-label">Bugün</div></div>
-<div class="stat-card"><div class="stat-value" id="stat_total">0</div><div class="stat-label">Toplam</div></div>
-<div class="stat-card"><div class="stat-value" id="health_score">--</div><div class="stat-label">Sağlık</div></div>
+<div class="stat-card"><div class="stat-value" id="stat_today">0</div><div class="stat-label">TODAY</div></div>
+<div class="stat-card"><div class="stat-value" id="stat_total">0</div><div class="stat-label">TOTAL</div></div>
+<div class="stat-card"><div class="stat-value" id="health_score">--</div><div class="stat-label">HEALTH SCORE</div></div>
 </div>
 </div>
 <div class="card" style="background:linear-gradient(135deg,var(--card),rgba(39,174,96,.08))">
-<div class="card-title">🤖 AutoML Sulama Asistanı <span style="margin-left:auto;font-size:12px;color:var(--green);background:rgba(39,174,96,.12);padding:4px 9px;border-radius:999px">Yerel & güvenli</span></div>
+<div class="card-title">🤖 AutoML irrigation assistant <span style="margin-left:auto;font-size:12px;color:var(--green);background:rgba(39,174,96,.12);padding:4px 9px;border-radius:999px">Local & safe</span></div>
 <div id="ml_status" style="padding:15px;background:var(--bg);border-radius:8px;margin-bottom:10px"></div>
 <div id="ml_prediction" style="font-size:14px;color:var(--text2)"></div>
 </div>
 <div class="card" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white">
-<div class="card-title" style="color:white">📊 Analytics & Raporlar</div>
+<div class="card-title" style="color:white">📊 Analytics & reports</div>
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:15px">
 <a href="/analytics/dashboard" target="_blank" class="btn" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px)">📈 Dashboard</a>
 <a href="/analytics/heatmap" target="_blank" class="btn" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px)">🔥 Heatmap</a>
-<a href="/analytics/correlation" target="_blank" class="btn" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px)">🔗 Korelasyon</a>
-<button class="btn" onclick="exportPDF()" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px)">📄 PDF Rapor</button>
-<button class="btn" onclick="exportExcel()" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px)">📊 Excel Rapor</button>
+<a href="/analytics/correlation" target="_blank" class="btn" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px)">🔗 Correlation</a>
+<button class="btn" onclick="exportPDF()" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px)">📄 PDF report</button>
+<button class="btn" onclick="exportExcel()" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px)">📊 Excel report</button>
 </div>
 <div id="export_status" style="margin-top:15px;padding:10px;background:rgba(255,255,255,0.1);border-radius:8px;font-size:13px;min-height:40px"></div>
 </div>
@@ -1362,6 +1366,7 @@ const savedTheme=localStorage.getItem('theme')||'light';document.documentElement
 function createChart(id,label,color){charts[id]=new Chart(document.getElementById(id),{type:'line',data:{labels:[],datasets:[{label,data:[],borderColor:color,backgroundColor:color+'20',tension:.4,fill:true,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:6}},y:{grid:{color:'rgba(149,165,166,.1)'}}}}})}
 function updateChart(id,labels,data){const chart=charts[id];if(!chart)return;chart.data.labels=labels.slice(-20);chart.data.datasets[0].data=data.slice(-20);chart.update('none')}
 [['soilChart','Toprak','#27AE60'],['tempChart','Sıcaklık','#F39C12'],['humChart','Nem','#3498DB'],['pressureChart','Basınç','#9B59B6']].forEach(item=>createChart(...item));
+charts.environmentChart=new Chart(document.getElementById('environmentChart'),{type:'line',data:{labels:[],datasets:[{label:'Soil moisture (%)',data:[],borderColor:'#27AE60',tension:.4,borderWidth:2},{label:'Air humidity (%)',data:[],borderColor:'#3498DB',tension:.4,borderWidth:2},{label:'Temperature (°C)',data:[],borderColor:'#F39C12',tension:.4,borderWidth:2,yAxisID:'temperature'}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{temperature:{position:'right',grid:{drawOnChartArea:false},ticks:{color:'#F39C12'}},x:{grid:{display:false}}}}});
 function post(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json())}
 function startWater(){post('/manual_irrigation',{action:'start',duration:Number(document.getElementById('manual_duration').value)}).then(d=>alert(d.message))}
 function stopWater(){post('/manual_irrigation',{action:'stop'}).then(d=>alert(d.message))}
@@ -1372,9 +1377,11 @@ function exportPDF(){exportFile('/analytics/export_pdf','PDF')};function exportE
 function updateUI(d){if(!d)return;['soil','temp','hum','pressure'].forEach(k=>document.getElementById(k+'_value').textContent=(d[k]||0).toFixed(k==='pressure'?0:1));document.getElementById('light_value').textContent=d.light_daytime?'☀️ Gündüz':'🌙 Gece';const pump=document.getElementById('pump_badge');pump.className='status-badge '+(d.pump_on?'status-on':'status-off');pump.textContent=d.pump_on?'⚫ Açık':'⚫ Kapalı';document.getElementById('stat_today').textContent=d.stats.daily.count;document.getElementById('stat_total').textContent=d.stats.total_irrigations;document.getElementById('health_score').textContent=d.health_score;const stats=d.ml_stats;document.getElementById('ml_status').innerHTML=d.ml_enabled?(stats?`<strong>✅ AutoML hazır</strong><br><small><strong>${stats.model_name}</strong> seçildi · ${stats.candidates_tested} model karşılaştırıldı<br>Doğrulama skoru: ${stats.score} | MAE: ${stats.mae} | RMSE: ${stats.rmse} | Veri: ${stats.data_points}</small>`:'<strong>✅ AutoML hazır</strong><br><small>İlk seçim için 30+ sensör kaydı gerekiyor.</small>'):'<strong>⚠️ ML Kapalı</strong>';document.getElementById('ml_prediction').innerHTML=d.ml_prediction?`<strong>💡 Optimal Sulama:</strong> ${d.ml_prediction}:00`:'Tahmin için daha fazla veri bekleniyor...';if(d.ml_suggested_hour!==null)document.getElementById('ml_prediction').innerHTML+=`<br><strong>🤖 Sistem Önerisi:</strong> ${d.ml_suggested_hour}:00`;document.getElementById('schedule_list').innerHTML=d.schedules.map((s,i)=>`<div class="schedule-item"><strong>${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}</strong><button class="btn btn-danger" style="padding:6px 12px;font-size:12px" onclick="deleteSchedule(${i})">🗑️</button></div>`).join('')||'<p style="color:var(--text2)">Program yok</p>';Object.entries({soil:'soil',temp:'temp',hum:'hum',pressure:'pressure'}).forEach(([key,id])=>updateChart(id+'Chart',d.history.times,d.history[key]))}
 let latestData={};
 function setConnection(text,state){const el=document.getElementById('connection_status');el.textContent=text;el.className='connection '+state}
-function applySensorUpdate(partial){latestData={...latestData,...partial,history:partial.history||latestData.history};if(latestData.stats&&latestData.schedules)updateUI(latestData)}
-async function update(){try{const response=await fetch('/data',{cache:'no-store'});latestData=await response.json();updateUI(latestData);setConnection('Canlı veri','online')}catch(e){setConnection('Çevrimdışı — tekrar deneniyor','offline');console.error(e)}}
-{% if socketio_available %}const socket=io({transports:['websocket','polling'],reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:1000,reconnectionDelayMax:10000,timeout:8000});socket.on('connect',()=>setConnection('Canlı veri','online'));socket.on('disconnect',()=>setConnection('Yeniden bağlanıyor…','offline'));socket.on('connect_error',()=>setConnection('Bağlantı bekleniyor…','offline'));socket.on('sensor_update',applySensorUpdate);{% endif %}
+function enhanceVisuals(d){const h=d.history;if(h){const chart=charts.environmentChart;chart.data.labels=h.times.slice(-20);chart.data.datasets[0].data=h.soil.slice(-20);chart.data.datasets[1].data=h.hum.slice(-20);chart.data.datasets[2].data=h.temp.slice(-20);chart.update('none')}document.getElementById('light_value').textContent=d.light_daytime?'☀️ Daylight':'🌙 Night';const pump=document.getElementById('pump_badge');pump.textContent=d.pump_on?'⚫ On':'⚫ Off';const stats=d.ml_stats;document.getElementById('ml_status').innerHTML=d.ml_enabled?(stats?`<strong>✅ AutoML ready</strong><br><small><strong>${stats.model_name}</strong> selected · ${stats.candidates_tested} models compared<br>Validation score: ${stats.score} | MAE: ${stats.mae} | RMSE: ${stats.rmse} | Samples: ${stats.data_points}</small>`:'<strong>✅ AutoML ready</strong><br><small>At least 30 sensor readings are needed for the first model selection.</small>'):'<strong>⚠️ ML unavailable</strong>';document.getElementById('ml_prediction').innerHTML=d.ml_prediction?`<strong>💡 Best irrigation time:</strong> ${d.ml_prediction}:00`:'More readings are needed before a prediction is available.';if(d.ml_suggested_hour!==null)document.getElementById('ml_prediction').innerHTML+=`<br><strong>🤖 System suggestion:</strong> ${d.ml_suggested_hour}:00`;document.getElementById('schedule_list').innerHTML=d.schedules.map((s,i)=>`<div class="schedule-item"><strong>${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}</strong><button class="btn btn-danger" style="padding:6px 12px;font-size:12px" onclick="deleteSchedule(${i})">🗑️</button></div>`).join('')||'<p style="color:var(--text2)">No schedules yet</p>'}
+function renderDashboard(d){updateUI(d);enhanceVisuals(d)}
+function applySensorUpdate(partial){latestData={...latestData,...partial,history:partial.history||latestData.history};if(latestData.stats&&latestData.schedules)renderDashboard(latestData)}
+async function update(){try{const response=await fetch('/data',{cache:'no-store'});latestData=await response.json();renderDashboard(latestData);setConnection('Live data','online')}catch(e){setConnection('Offline — retrying','offline');console.error(e)}}
+{% if socketio_available %}const socket=io({transports:['websocket','polling'],reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:1000,reconnectionDelayMax:10000,timeout:8000});socket.on('connect',()=>setConnection('Live data','online'));socket.on('disconnect',()=>setConnection('Reconnecting…','offline'));socket.on('connect_error',()=>setConnection('Waiting for connection…','offline'));socket.on('sensor_update',applySensorUpdate);{% endif %}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').then(registration=>registration.update()).catch(console.warn);update();setInterval(update,30000);
 </script>
 </body>

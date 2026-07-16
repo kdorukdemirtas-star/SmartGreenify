@@ -1,43 +1,43 @@
 # 🌱 SmartGreenify
 
-**Raspberry Pi üzerinde çalışan, gerçek sensör verileriyle sulamayı izleyen ve yerel AutoML ile öneri üreten akıllı sera uygulaması.**
+**A Raspberry Pi smart-garden dashboard that combines real sensor monitoring, safe irrigation controls, local AutoML recommendations, and reporting.**
 
-SmartGreenify; BME280, ADS1115, kapasitif toprak nem sensörü, LDR ve röle ile çalışır. Canlı gösterge paneli, PWA kurulumu, bildirimler, analitik raporlar ve makine öğrenmesi önerilerini tek bir Python uygulamasında bir araya getirir.
+SmartGreenify reads the BME280, ADS1115 soil-moisture sensor, and LDR; it can drive a pump relay, show a live web dashboard, create reports, and select an irrigation model from several local ML candidates.
 
-> Donanım güvenliği: Bu proje mevcut SPI/I²C yapılandırmasını, LDR için **GPIO 26** ve röle için **GPIO 27** atamasını korur.
+## Highlights
 
-## Öne çıkanlar
+- Live dashboard with WebSocket reconnection and HTTP fallback
+- Six sensor and garden-health summary cards
+- Soil, temperature, humidity, pressure, and multi-series environment charts
+- Installable PWA with a safe app-shell cache strategy
+- Local AutoML selection: Decision Tree, Random Forest, Extra Trees, Gradient Boosting, Histogram Gradient Boosting, and optional XGBoost
+- Manual, scheduled, and model-assisted irrigation workflows
+- Plotly analytics, PDF/Excel exports, Ntfy notifications, and rotating logs
 
-- Canlı sensör paneli ve Chart.js grafikleri
-- Dayanıklı WebSocket bağlantısı: otomatik yeniden bağlanma ve HTTP yenileme yedeği
-- Kurulabilir PWA ve güvenli uygulama-kabuğu önbelleği
-- Yerel AutoML: Decision Tree, Random Forest, Extra Trees, Gradient Boosting, HistGradientBoosting ve isteğe bağlı XGBoost
-- PDF / Excel / Plotly analitik raporları
-- Zamanlı, manuel ve ML destekli sulama akışları
-- Ntfy bildirimleri ve dönen sistem, sensör, sulama, ML ve performans günlükleri
+## Hardware map
 
-## Donanım bağlantıları
-
-| Bileşen | Bağlantı | Uygulamadaki karşılığı |
+| Component | Connection | App setting |
 |---|---:|---|
-| BME280 sıcaklık / nem / basınç | SPI `0.0` (GPIO 8–11) | `SPI_BUS=0`, `SPI_DEVICE=0` |
+| BME280 | SPI `0.0` (GPIO 8–11) | `SPI_BUS=0`, `SPI_DEVICE=0` |
 | ADS1115 ADC | I²C `0x48` (GPIO 2–3) | `I2C_BUS=1` |
-| Kapasitif toprak nem sensörü | ADS1115 A0 | ADC kanal 0 |
+| Capacitive soil sensor | ADS1115 A0 | ADC channel 0 |
 | LDR | GPIO 26 | `LDR_PIN=26` |
-| Pompa rölesi | GPIO 27 | `RELAY_PIN=27` |
+| Pump relay | GPIO 27 | `RELAY_PIN=27` |
 
-## Hızlı başlangıç
+> Hardware safety: the project preserves the existing sensor buses and GPIO assignments. Do not change pin assignments unless the physical wiring changes too.
 
-### 1. Raspberry Pi hazırlığı
+## Quick start
+
+### 1. Prepare Raspberry Pi OS
 
 ```bash
 sudo apt update
 sudo apt install -y python3-pip python3-lgpio python3-spidev python3-smbus2
 ```
 
-`raspi-config` içinden **SPI** ve **I²C** arayüzlerini etkinleştirin, ardından cihazı yeniden başlatın.
+Enable **SPI** and **I²C** using `raspi-config`, then reboot.
 
-### 2. Uygulamayı kurun ve başlatın
+### 2. Install and run
 
 ```bash
 git clone https://github.com/kdorukdemirtas-star/SmartGreenify.git
@@ -46,101 +46,102 @@ python3 -m pip install -r requirements.txt
 python3 SmartGreenify.py
 ```
 
-Panel: `http://<raspberry-pi-ip>:5050`
+Open `http://<raspberry-pi-ip>:5050`.
 
-XGBoost kurulamazsa uygulama çalışmaya devam eder; AutoML diğer scikit-learn modellerini karşılaştırır.
+XGBoost is optional: if it is not installed, AutoML continues with the available scikit-learn models.
 
-## Günlük kullanım
+## Dashboard and visualizations
 
-- **Panel:** canlı değerleri, bitki profilini, pompaları ve programları yönetin.
-- **Manuel sulama:** süreyi seçip başlatın; pompa durumunu panelden takip edin.
-- **Zamanlama:** saat ve dakikayı ekleyin; gereksiz programları silin.
-- **Raporlar:** paneldeki Analytics alanından Plotly, PDF veya Excel çıktısı alın.
+The dashboard displays current sensor readings and the following visualizations:
 
-## AutoML nasıl çalışır?
+- **Soil moisture trend** for short-term irrigation context
+- **Temperature, humidity, and pressure trends** for environmental monitoring
+- **Environmental overview** combining soil moisture, air humidity, and temperature in one comparison chart
+- **Garden-health cards** for daily irrigation count, total irrigations, and current plant-health score
+- **Analytics pages** for Plotly dashboard, irrigation heatmap, and sensor correlation matrix
 
-1. Sistem `data_log.csv` içindeki sensör kayıtlarını kullanır.
-2. En az 30 kayıt olduğunda zaman sırasını bozmadan son %20’yi doğrulama için ayırır.
-3. Aday modelleri MAE’ye göre karşılaştırır ve en iyi modeli seçer.
-4. Seçilen model tüm mevcut veriyle yeniden eğitilir ve `ml_model.pkl` dosyasına kaydedilir.
+## How AutoML works
 
-Girdiler: toprak nemi, sıcaklık, hava nemi, ışık durumu, saat ve pompa durumu. Çıktı, sulama için önerilen saattir. Model yalnızca günlük dosyasını okur; GPIO, röle, SPI veya I²C ayarlarına erişmez.
+1. The application reads valid records from `data_log.csv`.
+2. With at least 30 records, it keeps the newest 20% as a chronological validation set.
+3. It compares candidates by mean absolute error (MAE).
+4. It retrains the selected model on the full available data and stores it in `ml_model.pkl`.
 
-Eğitim başarılıysa yedi günde bir yenilenir. Veri henüz yeterli değilse sistem, kaynak tüketimini sınırlamak için en fazla saatte bir tekrar dener.
+Inputs are soil moisture, temperature, humidity, daylight, hour, and pump activity. The model only reads logged data; it does not access GPIO, SPI, I²C, or relay configuration. Successful models retrain weekly; when data is insufficient, retraining is retried at most once per hour to conserve CPU.
 
-## Yapılandırma
+## Configuration
 
-Tüm uygulama ayarları `SmartGreenify.py` içindeki `Config` sınıfındadır.
+Settings live in the `Config` class in `SmartGreenify.py`.
 
-| Ayar | Varsayılan | Açıklama |
+| Setting | Default | Meaning |
 |---|---:|---|
-| `UPDATE_INTERVAL` | `2` sn | Sensör okuma aralığı |
-| `FLASK_PORT` | `5050` | Web paneli portu |
-| `AUTO_IRRIGATION_ENABLED` | `True` | Otomatik sulamayı açar/kapatır |
-| `AUTO_IRRIGATION_DURATION` | `60` sn | Otomatik sulama süresi |
-| `AUTO_IRRIGATION_MIN_INTERVAL` | `3600` sn | İki otomatik sulama arasındaki alt sınır |
-| `ML_RETRAIN_INTERVAL` | `7 gün` | Başarılı eğitimler arasındaki süre |
+| `UPDATE_INTERVAL` | `2` seconds | Sensor polling interval |
+| `FLASK_PORT` | `5050` | Dashboard port |
+| `AUTO_IRRIGATION_ENABLED` | `True` | Enables automatic irrigation |
+| `AUTO_IRRIGATION_DURATION` | `60` seconds | Automatic irrigation duration |
+| `AUTO_IRRIGATION_MIN_INTERVAL` | `3600` seconds | Minimum delay between automatic runs |
+| `ML_RETRAIN_INTERVAL` | `7 days` | Interval after a successful model training |
 
-Oturum anahtarını sabit kodlamak yerine başlatma öncesinde ortam değişkeniyle belirleyebilirsiniz:
+Set a persistent session secret before starting the app:
 
 ```bash
-export SMARTGREENIFY_SECRET_KEY='uzun-ve-rastgele-bir-deger'
+export SMARTGREENIFY_SECRET_KEY='a-long-random-secret'
 python3 SmartGreenify.py
 ```
 
-## API özeti
+## API overview
 
-| Yöntem | Uç nokta | Amaç |
+| Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/data` | Güncel sensör ve panel verisi |
-| `POST` | `/manual_irrigation` | Manuel sulama başlat / durdur |
-| `POST` | `/select_plant` | Bitki profili seç |
-| `POST` | `/add_schedule` | Sulama programı ekle |
-| `POST` | `/delete_schedule` | Sulama programı sil |
-| `GET` | `/analytics/dashboard` | Analitik görünüm |
-| `GET` | `/analytics/export_pdf` | PDF raporu üret |
-| `GET` | `/analytics/export_excel` | Excel raporu üret |
+| `GET` | `/data` | Current dashboard data |
+| `POST` | `/manual_irrigation` | Start or stop manual irrigation |
+| `POST` | `/select_plant` | Select a plant profile |
+| `POST` | `/add_schedule` | Add a schedule |
+| `POST` | `/delete_schedule` | Delete a schedule |
+| `GET` | `/analytics/dashboard` | Analytics dashboard |
+| `GET` | `/analytics/export_pdf` | Create PDF report |
+| `GET` | `/analytics/export_excel` | Create Excel report |
 
-## Dosyalar ve günlükler
+## Runtime files
 
 ```text
-data_log.csv              # Sensör verileri
-schedule.json             # Sulama programları
-statistics.json           # Uygulama istatistikleri
-ml_model.pkl              # Seçilen AutoML modeli
-logs/system.log           # Sistem olayları
-logs/sensor_readings.log  # Sensör okumaları
-logs/irrigation.log       # Sulama olayları
-logs/ml_training.log      # Model eğitimi
-logs/performance.log      # Çalışma ve CSV metrikleri
-logs/errors.log           # Hatalar
+data_log.csv              # Sensor records
+schedule.json             # Schedules
+statistics.json           # App statistics
+ml_model.pkl              # Selected AutoML model
+logs/system.log           # System events
+logs/sensor_readings.log  # Sensor reads
+logs/irrigation.log       # Irrigation events
+logs/ml_training.log      # Model training
+logs/performance.log      # Runtime and CSV metrics
+logs/errors.log           # Errors only
 ```
 
-## Sorun giderme
+## Troubleshooting
 
-**Sensör verisi gelmiyor**
+**No sensor values**
 
 ```bash
-ls /dev/spi*   # /dev/spidev0.0 beklenir
-ls /dev/i2c*   # /dev/i2c-1 beklenir
-sudo i2cdetect -y 1  # 0x48 beklenir
+ls /dev/spi*   # expect /dev/spidev0.0
+ls /dev/i2c*   # expect /dev/i2c-1
+sudo i2cdetect -y 1  # expect 0x48
 ```
 
-**Pompa çalışmıyor**
+**Pump does not run**
 
-Önce güç kaynağını, röleyi ve GPIO 27 bağlantısını fiziksel olarak kontrol edin. Pompayı test ederken su tesisatını gözetimsiz bırakmayın.
+Check the power supply, relay, and GPIO 27 wiring before testing. Never leave pump testing unattended.
 
-**AutoML görünmüyor**
+**AutoML is unavailable**
 
-`numpy` ve `scikit-learn` paketlerinin kurulu olduğundan ve günlükte en az 30 geçerli kayıt bulunduğundan emin olun. XGBoost isteğe bağlıdır.
+Ensure `numpy` and `scikit-learn` are installed and at least 30 valid log records exist. XGBoost remains optional.
 
-## Güvenlik notları
+## Security notes
 
-- Uygulamayı yalnızca güvendiğiniz yerel ağlarda erişilebilir yapın.
-- Varsayılan pin atamalarını fiziksel tesisata uymadan değiştirmeyin.
-- Pompa ve röle için uygun güç kaynağı, sigorta ve suya karşı yalıtım kullanın.
-- Üretimde paneli doğrudan internete açmak yerine VPN veya ters vekil üzerinden kimlik doğrulama ekleyin.
+- Keep the dashboard on a trusted local network.
+- Do not expose the pump controls directly to the public internet.
+- Use a VPN or an authenticated reverse proxy for remote access.
+- Use appropriate electrical protection and water-safe enclosure practices.
 
-## Lisans
+## License
 
 [MIT](LICENSE)
