@@ -136,6 +136,11 @@ class Config:
     AUTO_IRRIGATION_DURATION = 60
     AUTO_IRRIGATION_MIN_INTERVAL = 3600
 
+    # Model eğitimi sensör döngüsünden ayrı tutulur; veri yetersizse saatlik
+    # yeniden deneme CPU'yu gereksiz kullanmayı önler.
+    ML_RETRAIN_INTERVAL = 7 * 24 * 3600
+    ML_RETRY_INTERVAL = 3600
+
 # Log klasörünü oluştur
 if not os.path.exists(Config.LOG_FOLDER):
     os.makedirs(Config.LOG_FOLDER)
@@ -986,10 +991,13 @@ class SmartController:
 
 # Flask App
 app = Flask(__name__, static_folder=Config.STATIC_FOLDER)
-app.config['SECRET_KEY'] = 'sg2025'
+app.config['SECRET_KEY'] = os.environ.get('SMARTGREENIFY_SECRET_KEY', os.urandom(32))
 
 if SOCKETIO_AVAILABLE:
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+    socketio = SocketIO(
+        app, async_mode='threading', cors_allowed_origins=None,
+        ping_interval=25, ping_timeout=20
+    )
 else:
     socketio = None
 
@@ -1025,7 +1033,7 @@ shutdown_event = threading.Event()
 
 def background_loop():
     last_ml_train = 0
-    ml_train_interval = 604800  # 7 gün
+    last_ml_attempt = 0
     last_ml_check_hour = -1
     last_csv_save = 0
     csv_save_interval = 300  # 5 dakika
@@ -1134,14 +1142,19 @@ def background_loop():
                             "Gündüz" if light_daytime else "Gece",
                             actuator.irrigation_on
                         ])
+                    performance_logger.log_csv_write(success=True)
                     logger.debug(f"📝 CSV: {soil:.1f}% nem")
                     last_csv_save = current_time
                 except Exception as e:
+                    performance_logger.log_csv_write(success=False)
                     logger.error(f"❌ CSV hatası: {e}")
             
             # ML eğitimi
-            if ML_AVAILABLE and (current_time - last_ml_train) > ml_train_interval:
+            if (ML_AVAILABLE and
+                    (current_time - last_ml_train) > Config.ML_RETRAIN_INTERVAL and
+                    (current_time - last_ml_attempt) > Config.ML_RETRY_INTERVAL):
                 logger.info("🤖 ML eğitiliyor...")
+                last_ml_attempt = current_time
                 if ml_optimizer.train_model(Config.CSV_FILE):
                     last_ml_train = current_time
                     send_ntfy("ML Model Egitildi", "Yeni tahminler hazir!", "default", "brain")

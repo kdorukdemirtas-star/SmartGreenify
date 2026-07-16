@@ -1,238 +1,146 @@
-# 🌱 SmartGreenify 
+# 🌱 SmartGreenify
 
-**IoT Sensör Ağı ve ML Tabanlı Akıllı Sera Sistemi**
+**Raspberry Pi üzerinde çalışan, gerçek sensör verileriyle sulamayı izleyen ve yerel AutoML ile öneri üreten akıllı sera uygulaması.**
 
+SmartGreenify; BME280, ADS1115, kapasitif toprak nem sensörü, LDR ve röle ile çalışır. Canlı gösterge paneli, PWA kurulumu, bildirimler, analitik raporlar ve makine öğrenmesi önerilerini tek bir Python uygulamasında bir araya getirir.
 
+> Donanım güvenliği: Bu proje mevcut SPI/I²C yapılandırmasını, LDR için **GPIO 26** ve röle için **GPIO 27** atamasını korur.
 
----
+## Öne çıkanlar
 
-## Genel Bakış
+- Canlı sensör paneli ve Chart.js grafikleri
+- Dayanıklı WebSocket bağlantısı: otomatik yeniden bağlanma ve HTTP yenileme yedeği
+- Kurulabilir PWA ve güvenli uygulama-kabuğu önbelleği
+- Yerel AutoML: Decision Tree, Random Forest, Extra Trees, Gradient Boosting, HistGradientBoosting ve isteğe bağlı XGBoost
+- PDF / Excel / Plotly analitik raporları
+- Zamanlı, manuel ve ML destekli sulama akışları
+- Ntfy bildirimleri ve dönen sistem, sensör, sulama, ML ve performans günlükleri
 
-SmartGreenify, **Raspberry Pi 5** üzerinde çalışan yapay zeka destekli otonom sera sistemidir.
+## Donanım bağlantıları
 
-###  Temel Özellikler
--  **AutoML** ile en uygun sulama tahmini (Decision Tree, Random Forest, Extra Trees, Gradient Boosting, HistGradientBoosting ve isteğe bağlı XGBoost)
--  **%40 su tasarrufu** (geleneksel yönteme göre)
--  **Real-time dashboard** (WebSocket + Chart.js)
--  **PWA desteği** - her cihazda çalışır
--  **Ntfy.sh bildirimleri**
--  **Kapsamlı loglama** (6 ayrı log dosyası)
--  **Analytics & Raporlar** (PDF/Excel/Plotly)
+| Bileşen | Bağlantı | Uygulamadaki karşılığı |
+|---|---:|---|
+| BME280 sıcaklık / nem / basınç | SPI `0.0` (GPIO 8–11) | `SPI_BUS=0`, `SPI_DEVICE=0` |
+| ADS1115 ADC | I²C `0x48` (GPIO 2–3) | `I2C_BUS=1` |
+| Kapasitif toprak nem sensörü | ADS1115 A0 | ADC kanal 0 |
+| LDR | GPIO 26 | `LDR_PIN=26` |
+| Pompa rölesi | GPIO 27 | `RELAY_PIN=27` |
 
-### 📈 Test Sonuçları (15 gün)
--  **%99.8** başarı oranı
--  **357.2 saat** kesintisiz çalışma
--  **4,318/4,320** başarılı kayıt
--  **R² = 0.847** ML model performansı
+## Hızlı başlangıç
 
----
+### 1. Raspberry Pi hazırlığı
 
-## 🛠 Donanım
-
-| Bileşen | Model | Pin |
-|---------|-------|-----|
-| **Ana işlemci** | Raspberry Pi 5 (4GB) | - |
-| **Sıcaklık/Nem/Basınç** | BME280 | SPI (GPIO 8-11) |
-| **ADC** | ADS1115 | I²C (GPIO 2-3) |
-| **Toprak Nemi** | Kapasitif Sensör | ADS1115 A0 |
-| **Işık** | LDR Modülü | GPIO 26 |
-| **Pompa** | 5V Su Pompası | Röle GPIO 27 |
-
----
-
-##  Kurulum
-
-### 1. Sistem Hazırlığı
 ```bash
-# Raspberry Pi OS güncellemesi
-sudo apt update && sudo apt upgrade -y
-
-# Python paketleri
-sudo apt install python3-pip python3-lgpio python3-spidev python3-smbus2 -y
+sudo apt update
+sudo apt install -y python3-pip python3-lgpio python3-spidev python3-smbus2
 ```
 
-### 2. Python Kütüphaneleri
+`raspi-config` içinden **SPI** ve **I²C** arayüzlerini etkinleştirin, ardından cihazı yeniden başlatın.
+
+### 2. Uygulamayı kurun ve başlatın
+
 ```bash
-# Zorunlu
-pip3 install flask requests
-
-# WebSocket (opsiyonel ama önerilen)
-pip3 install flask-socketio
-
-# AutoML özellikleri
-pip3 install numpy scikit-learn xgboost
-
-# Analytics & Raporlar
-pip3 install plotly pandas reportlab openpyxl
+git clone https://github.com/kdorukdemirtas-star/SmartGreenify.git
+cd SmartGreenify
+python3 -m pip install -r requirements.txt
+python3 SmartGreenify.py
 ```
 
-### 3. SPI/I²C Aktifleştirme
+Panel: `http://<raspberry-pi-ip>:5050`
+
+XGBoost kurulamazsa uygulama çalışmaya devam eder; AutoML diğer scikit-learn modellerini karşılaştırır.
+
+## Günlük kullanım
+
+- **Panel:** canlı değerleri, bitki profilini, pompaları ve programları yönetin.
+- **Manuel sulama:** süreyi seçip başlatın; pompa durumunu panelden takip edin.
+- **Zamanlama:** saat ve dakikayı ekleyin; gereksiz programları silin.
+- **Raporlar:** paneldeki Analytics alanından Plotly, PDF veya Excel çıktısı alın.
+
+## AutoML nasıl çalışır?
+
+1. Sistem `data_log.csv` içindeki sensör kayıtlarını kullanır.
+2. En az 30 kayıt olduğunda zaman sırasını bozmadan son %20’yi doğrulama için ayırır.
+3. Aday modelleri MAE’ye göre karşılaştırır ve en iyi modeli seçer.
+4. Seçilen model tüm mevcut veriyle yeniden eğitilir ve `ml_model.pkl` dosyasına kaydedilir.
+
+Girdiler: toprak nemi, sıcaklık, hava nemi, ışık durumu, saat ve pompa durumu. Çıktı, sulama için önerilen saattir. Model yalnızca günlük dosyasını okur; GPIO, röle, SPI veya I²C ayarlarına erişmez.
+
+Eğitim başarılıysa yedi günde bir yenilenir. Veri henüz yeterli değilse sistem, kaynak tüketimini sınırlamak için en fazla saatte bir tekrar dener.
+
+## Yapılandırma
+
+Tüm uygulama ayarları `SmartGreenify.py` içindeki `Config` sınıfındadır.
+
+| Ayar | Varsayılan | Açıklama |
+|---|---:|---|
+| `UPDATE_INTERVAL` | `2` sn | Sensör okuma aralığı |
+| `FLASK_PORT` | `5050` | Web paneli portu |
+| `AUTO_IRRIGATION_ENABLED` | `True` | Otomatik sulamayı açar/kapatır |
+| `AUTO_IRRIGATION_DURATION` | `60` sn | Otomatik sulama süresi |
+| `AUTO_IRRIGATION_MIN_INTERVAL` | `3600` sn | İki otomatik sulama arasındaki alt sınır |
+| `ML_RETRAIN_INTERVAL` | `7 gün` | Başarılı eğitimler arasındaki süre |
+
+Oturum anahtarını sabit kodlamak yerine başlatma öncesinde ortam değişkeniyle belirleyebilirsiniz:
+
 ```bash
-sudo raspi-config
-# Interface Options → SPI → Enable
-# Interface Options → I2C → Enable
-# Reboot
+export SMARTGREENIFY_SECRET_KEY='uzun-ve-rastgele-bir-deger'
+python3 SmartGreenify.py
 ```
 
-### 4. Projeyi Çalıştır
+## API özeti
+
+| Yöntem | Uç nokta | Amaç |
+|---|---|---|
+| `GET` | `/data` | Güncel sensör ve panel verisi |
+| `POST` | `/manual_irrigation` | Manuel sulama başlat / durdur |
+| `POST` | `/select_plant` | Bitki profili seç |
+| `POST` | `/add_schedule` | Sulama programı ekle |
+| `POST` | `/delete_schedule` | Sulama programı sil |
+| `GET` | `/analytics/dashboard` | Analitik görünüm |
+| `GET` | `/analytics/export_pdf` | PDF raporu üret |
+| `GET` | `/analytics/export_excel` | Excel raporu üret |
+
+## Dosyalar ve günlükler
+
+```text
+data_log.csv              # Sensör verileri
+schedule.json             # Sulama programları
+statistics.json           # Uygulama istatistikleri
+ml_model.pkl              # Seçilen AutoML modeli
+logs/system.log           # Sistem olayları
+logs/sensor_readings.log  # Sensör okumaları
+logs/irrigation.log       # Sulama olayları
+logs/ml_training.log      # Model eğitimi
+logs/performance.log      # Çalışma ve CSV metrikleri
+logs/errors.log           # Hatalar
+```
+
+## Sorun giderme
+
+**Sensör verisi gelmiyor**
+
 ```bash
-python3 smartgreenify.py
+ls /dev/spi*   # /dev/spidev0.0 beklenir
+ls /dev/i2c*   # /dev/i2c-1 beklenir
+sudo i2cdetect -y 1  # 0x48 beklenir
 ```
 
-Tarayıcıda: `http://localhost:5050`
+**Pompa çalışmıyor**
 
----
+Önce güç kaynağını, röleyi ve GPIO 27 bağlantısını fiziksel olarak kontrol edin. Pompayı test ederken su tesisatını gözetimsiz bırakmayın.
 
-##  Konfigürasyon
+**AutoML görünmüyor**
 
-`Config` sınıfındaki ayarlar:
+`numpy` ve `scikit-learn` paketlerinin kurulu olduğundan ve günlükte en az 30 geçerli kayıt bulunduğundan emin olun. XGBoost isteğe bağlıdır.
 
-```python
-UPDATE_INTERVAL = 1          # Sensör okuma (saniye)
-MAX_HISTORY = 60             # Bellek grafiği (60 saniye)
-FLASK_PORT = 5050            # Web arayüzü portu
-AUTO_IRRIGATION_ENABLED = True  # Otomatik sulama
-NTFY_ENABLED = True          # Bildirimleri aç/kapat
-NTFY_TOPIC = "sg_bahce_2025" # Ntfy topic ismi
-```
+## Güvenlik notları
 
-### Bitki Profilleri
-```python
-plant_profiles = {
-    "Roka": {"min_moisture": 45, "max_temp": 26, "icon": "🌱"},
-    "Domates": {"min_moisture": 50, "max_temp": 30, "icon": "🍅"},
-    "Fesleğen": {"min_moisture": 40, "max_temp": 28, "icon": "🌿"},
-    # ...
-}
-```
+- Uygulamayı yalnızca güvendiğiniz yerel ağlarda erişilebilir yapın.
+- Varsayılan pin atamalarını fiziksel tesisata uymadan değiştirmeyin.
+- Pompa ve röle için uygun güç kaynağı, sigorta ve suya karşı yalıtım kullanın.
+- Üretimde paneli doğrudan internete açmak yerine VPN veya ters vekil üzerinden kimlik doğrulama ekleyin.
 
----
+## Lisans
 
-## 📊 Özellikler
-
-### Web Arayüzü
-- **Ana Sayfa:** `/` - Dashboard, grafikler, kontroller
-- **Analytics:** `/analytics/dashboard` - Plotly dashboard
-- **Heatmap:** `/analytics/heatmap` - Sulama zaman dağılımı
-- **Korelasyon:** `/analytics/correlation` - Sensör korelasyonları
-
-### API Endpoints
-```bash
-GET  /data                    # Sensör verileri (JSON)
-POST /manual_irrigation       # Manuel sulama
-POST /select_plant            # Bitki değiştir
-POST /add_schedule            # Zamanlayıcı ekle
-POST /delete_schedule         # Zamanlayıcı sil
-GET  /analytics/export_pdf    # PDF rapor indir
-GET  /analytics/export_excel  # Excel rapor indir
-```
-
-### AutoML Makine Öğrenmesi
-- **Algoritmalar:** Decision Tree, Random Forest, Extra Trees, Gradient Boosting, Histogram Gradient Boosting ve (kuruluysa) XGBoost
-- **Seçim:** Son %20 zaman sıralı kayıt üzerinde en düşük MAE'ye sahip model otomatik seçilir; gelecek veriler eğitim setine karışmaz.
-- **Eğitim:** Her 7 günde otomatik
-- **Girdi:** Toprak nemi, sıcaklık, hava nemi, ışık, saat
-- **Çıktı:** Optimal sulama saati (0-23)
-- **Model dosyası:** `ml_model.pkl`
-- **Donanım güvenliği:** AutoML yalnızca `data_log.csv` dosyasını okur. Sensör, GPIO, SPI/I²C ve röle pin yapılandırmasını değiştirmez.
-
-### Loglama
-```
-logs/
-├── system.log          # Genel sistem olayları
-├── sensor_readings.log # Her sensör okuması
-├── irrigation.log      # Sulama işlemleri
-├── ml_training.log     # ML eğitim detayları
-├── performance.log     # Uptime, performans
-└── errors.log          # Sadece hatalar
-```
-
-### Bildirimler (Ntfy.sh)
-1. Ntfy uygulamasını yükle (Android/iOS)
-2. Topic ekle: 
-3. Sistem otomatik bildirim gönderir:
-   -  Sulama başladı/bitti
-   -  Düşük toprak nemi
-   -  ML modeli güncellendi
-
----
-
-##  Kullanım
-
-### Manuel Sulama
-```python
-# Web arayüzünden
-Süre seç (30s, 1dk, 2dk, 5dk) → Başlat
-
-# veya API ile
-curl -X POST http://localhost:5050/manual_irrigation \
-  -H "Content-Type: application/json" \
-  -d '{"action":"start","duration":60}'
-```
-
-### Zamanlayıcı Ekle
-```python
-# Web arayüzünden
-Saat:7, Dakika:0 → Ekle
-
-# veya API ile
-curl -X POST http://localhost:5050/add_schedule \
-  -H "Content-Type: application/json" \
-  -d '{"hour":7,"minute":0}'
-```
-
----
-
-##  Sorun Giderme
-
-### Sensör Okumuyor
-```bash
-# SPI/I2C kontrol
-ls /dev/spi*   # /dev/spidev0.0 görünmeli
-ls /dev/i2c*   # /dev/i2c-1 görünmeli
-
-# I2C adres tara
-sudo i2cdetect -y 1  # 0x48 (ADS1115) görünmeli
-```
-
-### Pompa Çalışmıyor
-```bash
-# GPIO test
-python3 -c "import lgpio; h=lgpio.gpiochip_open(0); lgpio.gpio_claim_output(h,27); lgpio.gpio_write(h,27,0)"
-```
-
-
-
----
-
-## Veri Dosyaları
-
-```
-data_log.csv          # Sensör kayıtları
-schedule.json         # Zamanlayıcılar
-statistics.json       # İstatistikler
-ml_model.pkl          # ML modeli
-static/
-  ├── smartgreenify_report.pdf   # PDF rapor
-  └── smartgreenify_report.xlsx  # Excel rapor
-```
-
----
-
-##  Güvenlik
-
-- **Atomic file write:** Veri kaybı önleme
-- **Thread-safe:** Eş zamanlı erişim koruması
-- **Error handling:** Try-catch blokları
-- **Auto recovery:** Kesinti sonrası otomatik devam
-
----
-
-
-
-##  İletişim & Destek
-
-kdorukdemirtas@hotmail.com
----
-
-
+[MIT](LICENSE)
