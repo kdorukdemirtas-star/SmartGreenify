@@ -819,7 +819,7 @@ class MLOptimizer:
                                 'soil': float(row['soil']),
                                 'temp': float(row['temp']),
                                 'hum': float(row['hum']),
-                                'light': 1 if row['light'] == 'Gündüz' else 0,
+                                'light': 1 if row['light'] in ('Daylight', 'Gündüz') else 0,
                                 'pump': row['pump'] == 'True'
                             })
                         except:
@@ -1086,8 +1086,8 @@ def background_loop():
                             if controller.start_auto_irrigation(f"ML Tavsiye (Saat: {optimal_hour}:00)", soil):
                                 soil_before_irrigation = soil
                                 send_ntfy(
-                                    "Otomatik Sulama Basladi",
-                                    f"ML tavsiyesi: {optimal_hour}:00 - Toprak: {soil:.1f}% (Min: {profile['min_moisture']}%)",
+                                    "Automatic irrigation started",
+                                    f"ML recommendation: {optimal_hour}:00 - Soil: {soil:.1f}% (Min: {profile['min_moisture']}%)",
                                     "default",
                                     "droplet,robot"
                                 )
@@ -1098,8 +1098,8 @@ def background_loop():
             profile = plant_profiles[controller.selected_plant]
             if soil < profile["min_moisture"] - 5 and (current_time - last_low_soil_alert) > low_soil_alert_interval:
                 send_ntfy(
-                    "ACIL: Cok Dusuk Nem!",
-                    f"{controller.selected_plant} toprak nemi cok dusuk: {soil:.1f}% (Min: {profile['min_moisture']}%)",
+                    "URGENT: Very low soil moisture!",
+                    f"{controller.selected_plant} soil moisture is very low: {soil:.1f}% (Min: {profile['min_moisture']}%)",
                     "urgent",
                     "warning,droplet,sos"
                 )
@@ -1124,8 +1124,8 @@ def background_loop():
                     
                     controller.statistics.record_irrigation(actuator.get_total_time())
                     send_ntfy(
-                        "Sulama Tamamlandi",
-                        f"Sulama suresinin sonuna ulasti",
+                        "Irrigation completed",
+                        "The irrigation duration has ended",
                         "default",
                         "droplet,white_check_mark"
                     )
@@ -1139,7 +1139,7 @@ def background_loop():
                             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             controller.selected_plant,
                             soil, temp, hum, pressure,
-                            "Gündüz" if light_daytime else "Gece",
+                            "Daylight" if light_daytime else "Night",
                             actuator.irrigation_on
                         ])
                     performance_logger.log_csv_write(success=True)
@@ -1365,14 +1365,14 @@ function toggleTheme(){const root=document.documentElement,next=root.getAttribut
 const savedTheme=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',savedTheme);if(savedTheme==='dark')document.getElementById('theme-icon').textContent='☀️';
 function createChart(id,label,color){charts[id]=new Chart(document.getElementById(id),{type:'line',data:{labels:[],datasets:[{label,data:[],borderColor:color,backgroundColor:color+'20',tension:.4,fill:true,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:6}},y:{grid:{color:'rgba(149,165,166,.1)'}}}}})}
 function updateChart(id,labels,data){const chart=charts[id];if(!chart)return;chart.data.labels=labels.slice(-20);chart.data.datasets[0].data=data.slice(-20);chart.update('none')}
-[['soilChart','Toprak','#27AE60'],['tempChart','Sıcaklık','#F39C12'],['humChart','Nem','#3498DB'],['pressureChart','Basınç','#9B59B6']].forEach(item=>createChart(...item));
+[['soilChart','Soil moisture','#27AE60'],['tempChart','Temperature','#F39C12'],['humChart','Humidity','#3498DB'],['pressureChart','Pressure','#9B59B6']].forEach(item=>createChart(...item));
 charts.environmentChart=new Chart(document.getElementById('environmentChart'),{type:'line',data:{labels:[],datasets:[{label:'Soil moisture (%)',data:[],borderColor:'#27AE60',tension:.4,borderWidth:2},{label:'Air humidity (%)',data:[],borderColor:'#3498DB',tension:.4,borderWidth:2},{label:'Temperature (°C)',data:[],borderColor:'#F39C12',tension:.4,borderWidth:2,yAxisID:'temperature'}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{temperature:{position:'right',grid:{drawOnChartArea:false},ticks:{color:'#F39C12'}},x:{grid:{display:false}}}}});
 function post(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json())}
 function startWater(){post('/manual_irrigation',{action:'start',duration:Number(document.getElementById('manual_duration').value)}).then(d=>alert(d.message))}
 function stopWater(){post('/manual_irrigation',{action:'stop'}).then(d=>alert(d.message))}
 function addSchedule(){post('/add_schedule',{hour:Number(document.getElementById('schedule_hour').value),minute:Number(document.getElementById('schedule_minute').value)}).then(d=>{alert(d.message);update()})}
-function deleteSchedule(index){if(confirm('Silmek istediğinize emin misiniz?'))post('/delete_schedule',{index}).then(d=>{alert(d.message);update()})}
-function exportFile(path,label){const status=document.getElementById('export_status');status.textContent='⏳ '+label+' oluşturuluyor...';fetch(path).then(r=>r.json()).then(d=>{status.innerHTML=d.success?`✅ ${d.message}<br><a href="${d.download_url}" download style="color:white;text-decoration:underline">📥 İndir</a>`:'❌ Hata: '+d.error}).catch(e=>status.textContent='❌ Hata: '+e)}
+function deleteSchedule(index){if(confirm('Are you sure you want to delete this schedule?'))post('/delete_schedule',{index}).then(d=>{alert(d.message);update()})}
+function exportFile(path,label){const status=document.getElementById('export_status');status.textContent='⏳ Creating '+label+'...';fetch(path).then(r=>r.json()).then(d=>{status.innerHTML=d.success?`✅ ${d.message}<br><a href="${d.download_url}" download style="color:white;text-decoration:underline">📥 Download</a>`:'❌ Error: '+d.error}).catch(e=>status.textContent='❌ Error: '+e)}
 function exportPDF(){exportFile('/analytics/export_pdf','PDF')};function exportExcel(){exportFile('/analytics/export_excel','Excel')}
 function updateUI(d){if(!d)return;['soil','temp','hum','pressure'].forEach(k=>document.getElementById(k+'_value').textContent=(d[k]||0).toFixed(k==='pressure'?0:1));document.getElementById('light_value').textContent=d.light_daytime?'☀️ Gündüz':'🌙 Gece';const pump=document.getElementById('pump_badge');pump.className='status-badge '+(d.pump_on?'status-on':'status-off');pump.textContent=d.pump_on?'⚫ Açık':'⚫ Kapalı';document.getElementById('stat_today').textContent=d.stats.daily.count;document.getElementById('stat_total').textContent=d.stats.total_irrigations;document.getElementById('health_score').textContent=d.health_score;const stats=d.ml_stats;document.getElementById('ml_status').innerHTML=d.ml_enabled?(stats?`<strong>✅ AutoML hazır</strong><br><small><strong>${stats.model_name}</strong> seçildi · ${stats.candidates_tested} model karşılaştırıldı<br>Doğrulama skoru: ${stats.score} | MAE: ${stats.mae} | RMSE: ${stats.rmse} | Veri: ${stats.data_points}</small>`:'<strong>✅ AutoML hazır</strong><br><small>İlk seçim için 30+ sensör kaydı gerekiyor.</small>'):'<strong>⚠️ ML Kapalı</strong>';document.getElementById('ml_prediction').innerHTML=d.ml_prediction?`<strong>💡 Optimal Sulama:</strong> ${d.ml_prediction}:00`:'Tahmin için daha fazla veri bekleniyor...';if(d.ml_suggested_hour!==null)document.getElementById('ml_prediction').innerHTML+=`<br><strong>🤖 Sistem Önerisi:</strong> ${d.ml_suggested_hour}:00`;document.getElementById('schedule_list').innerHTML=d.schedules.map((s,i)=>`<div class="schedule-item"><strong>${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}</strong><button class="btn btn-danger" style="padding:6px 12px;font-size:12px" onclick="deleteSchedule(${i})">🗑️</button></div>`).join('')||'<p style="color:var(--text2)">Program yok</p>';Object.entries({soil:'soil',temp:'temp',hum:'hum',pressure:'pressure'}).forEach(([key,id])=>updateChart(id+'Chart',d.history.times,d.history[key]))}
 let latestData={};
@@ -1412,10 +1412,10 @@ def select_plant():
             send_ntfy("Bitki Degisti", f"Yeni bitki: {plant_name} {plant_profiles[plant_name]['icon']}", "default", "seedling")
             return redirect(url_for('index'))
         else:
-            return f"Hata: Bilinmeyen bitki '{plant_name}'", 400
+            return f"Error: Unknown plant '{plant_name}'", 400
     except Exception as e:
         logger.error(f"Bitki değiştirme hatası: {e}")
-        return f"Hata: {e}", 500
+        return f"Error: {e}", 500
 
 @app.route("/data")
 def data():
@@ -1478,13 +1478,13 @@ def manual_irrigation():
             duration = data.get('duration', 60)
             soil_before = soil_history[-1] if soil_history else 50
             controller.start_manual_irrigation(duration, soil_before)
-            send_ntfy("Sulama Baslatildi", f"Manuel sulama basladi - Sure: {duration}s", "default", "droplet")
-            return jsonify({"success": True, "message": "✅ Sulama başlatıldı"})
+            send_ntfy("Irrigation started", f"Manual irrigation started - Duration: {duration}s", "default", "droplet")
+            return jsonify({"success": True, "message": "✅ Irrigation started"})
         else:
             controller.manual_irrigation_end = None
             actuator.set_irrigation(False)
-            send_ntfy("Sulama Durduruldu", "Manuel durdurma", "default", "droplet")
-            return jsonify({"success": True, "message": "⏹️ Sulama durduruldu"})
+            send_ntfy("Irrigation stopped", "Stopped manually", "default", "droplet")
+            return jsonify({"success": True, "message": "⏹️ Irrigation stopped"})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1493,7 +1493,7 @@ def add_schedule():
     try:
         data = request.get_json()
         controller.schedule.add_time_schedule(data.get('hour', 7), data.get('minute', 0))
-        return jsonify({"success": True, "message": "✅ Program eklendi"})
+        return jsonify({"success": True, "message": "✅ Schedule added"})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1502,7 +1502,7 @@ def delete_schedule():
     try:
         data = request.get_json()
         if controller.schedule.delete_time_schedule(data.get('index', -1)):
-            return jsonify({"success": True, "message": "✅ Program silindi"})
+            return jsonify({"success": True, "message": "✅ Schedule deleted"})
         return jsonify({"success": False, "message": "❌ Silinemedi"}), 400
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1516,7 +1516,7 @@ def analytics_dashboard():
     
     try:
         if not os.path.exists(Config.CSV_FILE):
-            return "<h1 style='color:red;'>❌ CSV dosyası yok</h1>", 404
+            return "<h1 style='color:red;'>❌ No CSV data available</h1>", 404
         
         df = pd.read_csv(Config.CSV_FILE)
         
@@ -1528,31 +1528,31 @@ def analytics_dashboard():
         
         fig = make_subplots(
             rows=2, cols=2,
-            subplot_titles=('🌱 Toprak Nemi', '🌡️ Sıcaklık & Nem', '🌍 Basınç', '💧 Sulama Geçmişi'),
+            subplot_titles=('🌱 Soil moisture', '🌡️ Temperature & humidity', '🌍 Pressure', '💧 Irrigation history'),
             specs=[[{"secondary_y": False}, {"secondary_y": True}],
                    [{"secondary_y": False}, {"secondary_y": False}]]
         )
         
         fig.add_trace(
-            go.Scatter(x=df['timestamp'], y=df['soil'], name='Toprak Nemi',
+            go.Scatter(x=df['timestamp'], y=df['soil'], name='Soil moisture',
                       line=dict(color='#27AE60', width=2),
                       fill='tozeroy', fillcolor='rgba(39, 174, 96, 0.2)'),
             row=1, col=1
         )
         
         fig.add_trace(
-            go.Scatter(x=df['timestamp'], y=df['temp'], name='Sıcaklık',
+            go.Scatter(x=df['timestamp'], y=df['temp'], name='Temperature',
                       line=dict(color='#F39C12', width=2)),
             row=1, col=2
         )
         fig.add_trace(
-            go.Scatter(x=df['timestamp'], y=df['hum'], name='Nem',
+            go.Scatter(x=df['timestamp'], y=df['hum'], name='Humidity',
                       line=dict(color='#3498DB', width=2)),
             row=1, col=2, secondary_y=True
         )
         
         fig.add_trace(
-            go.Scatter(x=df['timestamp'], y=df['pressure'], name='Basınç',
+            go.Scatter(x=df['timestamp'], y=df['pressure'], name='Pressure',
                       line=dict(color='#9B59B6', width=2),
                       fill='tozeroy', fillcolor='rgba(155, 89, 182, 0.2)'),
             row=2, col=1
@@ -1573,9 +1573,9 @@ def analytics_dashboard():
             title_font_size=24
         )
         
-        fig.update_yaxes(title_text="Nem (%)", row=1, col=1)
-        fig.update_yaxes(title_text="Sıcaklık (°C)", row=1, col=2)
-        fig.update_yaxes(title_text="Nem (%)", secondary_y=True, row=1, col=2)
+        fig.update_yaxes(title_text="Moisture (%)", row=1, col=1)
+        fig.update_yaxes(title_text="Temperature (°C)", row=1, col=2)
+        fig.update_yaxes(title_text="Humidity (%)", secondary_y=True, row=1, col=2)
         fig.update_yaxes(title_text="hPa", row=2, col=1)
         fig.update_yaxes(title_text="Durum", row=2, col=2)
         
@@ -1593,7 +1593,7 @@ def analytics_heatmap():
     
     try:
         if not os.path.exists(Config.CSV_FILE):
-            return "<h1 style='color:red;'>❌ CSV dosyası yok</h1>", 404
+            return "<h1 style='color:red;'>❌ No CSV data available</h1>", 404
         
         df = pd.read_csv(Config.CSV_FILE)
         
@@ -1608,7 +1608,7 @@ def analytics_heatmap():
         heatmap_data = df[df['pump_numeric'] == 1].groupby(['date', 'hour']).size().reset_index(name='count')
         
         if len(heatmap_data) == 0:
-            return "<h1 style='color:orange;'>⚠️ Sulama verisi yok</h1>", 400
+            return "<h1 style='color:orange;'>⚠️ No irrigation data available</h1>", 400
         
         pivot = heatmap_data.pivot(index='date', columns='hour', values='count').fillna(0)
         
@@ -1618,11 +1618,11 @@ def analytics_heatmap():
             y=[str(d) for d in pivot.index],
             colorscale='Viridis',
             hoverongaps=False,
-            colorbar=dict(title="Sulama Sayısı")
+            colorbar=dict(title="Irrigation count")
         ))
         
         fig.update_layout(
-            title='🔥 Sulama Heatmap - Saatlik Dağılım',
+            title='🔥 Irrigation heatmap — hourly distribution',
             xaxis_title='Saat',
             yaxis_title='Tarih',
             height=600,
@@ -1642,7 +1642,7 @@ def analytics_correlation():
     
     try:
         if not os.path.exists(Config.CSV_FILE):
-            return "<h1 style='color:red;'>❌ CSV dosyası yok</h1>", 404
+            return "<h1 style='color:red;'>❌ No CSV data available</h1>", 404
         
         df = pd.read_csv(Config.CSV_FILE)
         
@@ -1650,15 +1650,15 @@ def analytics_correlation():
             return "<h1 style='color:orange;'>⚠️ Yetersiz veri</h1>", 400
         
         df['pump_numeric'] = df['pump'].map({'True': 1, True: 1, 'False': 0, False: 0})
-        df['light_numeric'] = df['light'].map({'Gündüz': 1, 'Gece': 0})
+        df['light_numeric'] = df['light'].map({'Daylight': 1, 'Night': 0, 'Gündüz': 1, 'Gece': 0})
         
         numeric_cols = ['soil', 'temp', 'hum', 'pressure', 'light_numeric', 'pump_numeric']
         corr_matrix = df[numeric_cols].corr()
         
         fig = go.Figure(data=go.Heatmap(
             z=corr_matrix.values,
-            x=['Toprak', 'Sıcaklık', 'Nem', 'Basınç', 'Işık', 'Pompa'],
-            y=['Toprak', 'Sıcaklık', 'Nem', 'Basınç', 'Işık', 'Pompa'],
+            x=['Soil', 'Temperature', 'Humidity', 'Pressure', 'Light', 'Pump'],
+            y=['Soil', 'Temperature', 'Humidity', 'Pressure', 'Light', 'Pump'],
             colorscale='RdBu',
             zmid=0,
             text=corr_matrix.values.round(2),
@@ -1668,7 +1668,7 @@ def analytics_correlation():
         ))
         
         fig.update_layout(
-            title='🔗 Sensör Korelasyon Matrisi',
+            title='🔗 Sensor correlation matrix',
             height=600,
             template='plotly_white'
         )
@@ -1686,7 +1686,7 @@ def export_pdf():
     
     try:
         if not os.path.exists(Config.CSV_FILE):
-            return jsonify({"error": "CSV dosyası yok"}), 404
+            return jsonify({"error": "No CSV data available"}), 404
         
         pdf_file = os.path.join(Config.STATIC_FOLDER, "smartgreenify_report.pdf")
         doc = SimpleDocTemplate(pdf_file, pagesize=A4)
@@ -1715,27 +1715,31 @@ def export_pdf():
             fontName=font_name,
             fontSize=11
         )
+        heading_style = ParagraphStyle(
+            'CustomHeading', parent=styles['Heading2'], fontName=font_name,
+            textColor=colors.HexColor('#2C3E50'), spaceBefore=12, spaceAfter=10
+        )
         
-        story.append(Paragraph("SmartGreenify Analytics Raporu", title_style))
+        story.append(Paragraph("SmartGreenify Analytics Report", title_style))
         story.append(Spacer(1, 0.3*inch))
         
-        story.append(Paragraph(f"Rapor Tarihi: {datetime.now().strftime('%Y-%m-%d %H:%M')}", normal_style))
+        story.append(Paragraph(f"Report date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", normal_style))
         story.append(Spacer(1, 0.3*inch))
         
         df = pd.read_csv(Config.CSV_FILE)
         
         if len(df) == 0:
-            story.append(Paragraph("Veri yok", normal_style))
+            story.append(Paragraph("No data available", normal_style))
         else:
             stats_data = [
-                ['Metrik', 'Deger'],
-                ['Toplam Kayit', str(len(df))],
-                ['Ort. Toprak Nemi', f"{df['soil'].mean():.1f}%"],
-                ['Ort. Sicaklik', f"{df['temp'].mean():.1f}C"],
-                ['Ort. Nem', f"{df['hum'].mean():.1f}%"],
-                ['Toplam Sulama', str(df[df['pump'].astype(str).isin(['True', 'true', '1'])].shape[0])],
-                ['Min Toprak', f"{df['soil'].min():.1f}%"],
-                ['Max Toprak', f"{df['soil'].max():.1f}%"],
+                ['Metric', 'Value'],
+                ['Total records', str(len(df))],
+                ['Average soil moisture', f"{df['soil'].mean():.1f}%"],
+                ['Average temperature', f"{df['temp'].mean():.1f}C"],
+                ['Average humidity', f"{df['hum'].mean():.1f}%"],
+                ['Total irrigation events', str(df[df['pump'].astype(str).isin(['True', 'true', '1'])].shape[0])],
+                ['Minimum soil moisture', f"{df['soil'].min():.1f}%"],
+                ['Maximum soil moisture', f"{df['soil'].max():.1f}%"],
             ]
             
             stats_table = Table(stats_data, colWidths=[3*inch, 2*inch])
@@ -1753,14 +1757,14 @@ def export_pdf():
             story.append(stats_table)
             story.append(Spacer(1, 0.5*inch))
             
-            story.append(Paragraph("Son 10 Kayit", heading_style))
-            recent_data = [['Tarih', 'Toprak', 'Sicaklik', 'Pompa']]
+            story.append(Paragraph("Latest 10 records", heading_style))
+            recent_data = [['Date', 'Soil', 'Temperature', 'Pump']]
             for _, row in df.tail(10).iterrows():
                 recent_data.append([
                     row['timestamp'][:16],
                     f"{row['soil']:.1f}%",
                     f"{row['temp']:.1f}C",
-                    'Acik' if str(row['pump']) in ['True', 'true', '1'] else 'Kapali'
+                    'On' if str(row['pump']) in ['True', 'true', '1'] else 'Off'
                 ])
             
             recent_table = Table(recent_data, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1*inch])
@@ -1779,11 +1783,11 @@ def export_pdf():
         
         doc.build(story)
         
-        send_ntfy("PDF Rapor Hazirlandi", f"Rapor basariyla olusturuldu! Toplam {len(df)} kayit.", "default", "page_facing_up")
+        send_ntfy("PDF report ready", f"Report created successfully with {len(df)} records.", "default", "page_facing_up")
         
         return jsonify({
             "success": True,
-            "message": "PDF olusturuldu",
+            "message": "PDF report created",
             "download_url": f"/static/smartgreenify_report.pdf"
         })
         

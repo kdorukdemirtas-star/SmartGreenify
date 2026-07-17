@@ -60,6 +60,12 @@ The dashboard displays current sensor readings and the following visualizations:
 - **Garden-health cards** for daily irrigation count, total irrigations, and current plant-health score
 - **Analytics pages** for Plotly dashboard, irrigation heatmap, and sensor correlation matrix
 
+## How Codex and GPT-5.6 were used
+
+Codex and GPT-5.6 were used as development collaborators to improve the software around the existing hardware design. They helped review the project structure, strengthen the AutoML workflow, refine the responsive dashboard, add visualization ideas, improve PWA and WebSocket resilience, and rewrite the documentation in English.
+
+The hardware decisions remained under project control: sensor buses, GPIO assignments, and irrigation behavior were intentionally preserved. Codex and GPT-5.6 supported implementation and documentation work; they do not operate the physical garden or replace human supervision of the pump and electrical setup.
+
 ## How AutoML works
 
 1. The application reads valid records from `data_log.csv`.
